@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>AvITData Ağ İzleme</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+    <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+  </head>
+  <body data-monitor-mode="{{ monitor_mode }}" data-user-role="{{ current_user.role }}">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">AvITData · Yerel prototip</p>
+        <h1>Kurumsal Ağ İzleme</h1>
+        <p class="subtitle">Cihazları izleyin ve kontrol geçmişini inceleyin.</p>
+      </div>
+      <div class="header-actions">
+        <div class="user-card">
+          <span>Oturum</span>
+          <strong>{{ current_user.username }}</strong>
+          <small>{{ "Yönetici" if current_user.role == "admin" else "Görüntüleyici" }}</small>
+        </div>
+        <div class="mode-card" aria-label="Kontrol modu">
+          <span>Kontrol modu</span>
+          <strong id="mode-label">{{ monitor_mode | upper }}</strong>
+          {% if monitor_mode == "mock" %}
+          <small>Simülasyon · gerçek ağ isteği gönderilmez</small>
+          {% else %}
+          <small>ICMP · yalnızca izin verilen hedefler</small>
+          {% endif %}
+        </div>
+        <form method="post" action="/logout" class="logout-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary" type="submit">Çıkış yap</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="layout {{ 'admin-layout' if current_user.role == 'admin' else 'viewer-layout' }}">
+      <section class="panel overview-panel" aria-labelledby="overview-title">
+        <h2 id="overview-title">Genel Durum</h2>
+        <p id="overview-status" role="status">Yükleniyor…</p>
+        {% if current_user.role == "admin" %}
+        <div class="actions">
+          <button id="monitor-start" class="button primary">Otomatik izlemeyi başlat</button>
+          <button id="monitor-stop" class="button secondary">İzlemeyi durdur</button>
+        </div>
+        {% endif %}
+        <p id="monitor-message" role="status"></p>
+        <div id="overview-devices" class="device-list"></div>
+      </section>
+      <section class="panel alarms-panel" aria-labelledby="alarms-title">
+        <h2 id="alarms-title">Alarmlar</h2>
+        <p>Alarmın açık kaldığı süre kesin ağ kesintisi süresi değildir.</p>
+        <div class="field-row">
+          <label>Durum<select id="alarm-status-filter">
+            <option value="">Tümü</option><option value="open">Açık</option>
+            <option value="resolved">Çözüldü</option><option value="closed">İdari kapalı</option>
+          </select></label>
+          <label>Ölçüm modu<select id="alarm-mode-filter">
+            <option value="mock" {{ 'selected' if monitor_mode == 'mock' else '' }}>MOCK / simülasyon</option>
+            <option value="icmp" {{ 'selected' if monitor_mode == 'icmp' else '' }}>ICMP</option>
+          </select></label>
+        </div>
+        <p id="alarms-status" role="status"></p>
+        <div id="alarms-list" class="history-list"></div>
+        <div class="actions">
+          <button id="alarms-prev" class="button secondary">Önceki</button>
+          <button id="alarms-next" class="button secondary">Sonraki</button>
+        </div>
+        <div id="alarm-detail" aria-live="polite"></div>
+      </section>
+      {% if current_user.role == "admin" %}
+      <section class="panel add-panel" aria-labelledby="add-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Envanter</p>
+            <h2 id="add-title">Yeni cihaz ekle</h2>
+          </div>
+        </div>
+        <form id="add-form">
+          <label>
+            Cihaz adı <span aria-hidden="true">*</span>
+            <input name="name" maxlength="100" required placeholder="Örn. Merkez yönlendirici">
+          </label>
+          <label>
+            IP adresi <span aria-hidden="true">*</span>
+            <input name="ip_address" maxlength="45" required placeholder="127.0.0.1">
+          </label>
+          <div class="field-row">
+            <label>Cihaz türü<input name="device_type" maxlength="50" placeholder="Yönlendirici"></label>
+            <label>Konum<input name="location" maxlength="100" placeholder="Sunucu odası"></label>
+          </div>
+          <label>Açıklama<textarea name="description" maxlength="500" rows="3" placeholder="Kısa not"></textarea></label>
+          <button class="button primary" type="submit">Cihazı kaydet</button>
+          <p id="add-message" class="form-message" role="status"></p>
+        </form>
+      </section>
+      {% endif %}
+
+      <section class="panel devices-panel" aria-labelledby="devices-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Genel görünüm</p>
+            <h2 id="devices-title">Cihazlar</h2>
+          </div>
+          <button id="refresh-button" class="button secondary" type="button">Yenile</button>
+        </div>
+        <p id="devices-status" class="state-message" role="status">Cihazlar yükleniyor…</p>
+        <div id="devices-list" class="device-list" aria-live="polite"></div>
+      </section>
+
+      <section id="detail-panel" class="panel detail-panel" aria-labelledby="detail-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Seçili cihaz</p>
+            <h2 id="detail-title">Kontrol geçmişi</h2>
+          </div>
+        </div>
+        <p id="history-status" class="state-message">Geçmişini görmek için bir cihaz seçin.</p>
+        <div id="history-list" class="history-list"></div>
+      </section>
+
+      {% if current_user.role == "admin" %}
+      <section id="edit-panel" class="panel edit-panel hidden" aria-labelledby="edit-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Envanter kaydı</p>
+            <h2 id="edit-title">Cihazı düzenle</h2>
+          </div>
+          <button id="cancel-edit" class="icon-button" type="button" aria-label="Düzenlemeyi kapat">×</button>
+        </div>
+        <form id="edit-form">
+          <label>Cihaz adı<input name="name" maxlength="100" required></label>
+          <label>IP adresi<input name="ip_address" maxlength="45" required></label>
+          <div class="field-row">
+            <label>Cihaz türü<input name="device_type" maxlength="50"></label>
+            <label>Konum<input name="location" maxlength="100"></label>
+          </div>
+          <label>Açıklama<textarea name="description" maxlength="500" rows="3"></textarea></label>
+          <label class="checkbox-label"><input name="is_active" type="checkbox"> İzlemeye açık</label>
+          <button class="button primary" type="submit">Değişiklikleri kaydet</button>
+          <p id="edit-message" class="form-message" role="status"></p>
+        </form>
+      </section>
+
+      <section class="panel audit-panel" aria-labelledby="audit-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Güvenlik</p>
+            <h2 id="audit-title">Denetim kayıtları</h2>
+          </div>
+          <button id="audit-refresh-button" class="button secondary" type="button">Yenile</button>
+        </div>
+        <p id="audit-status" class="state-message">Denetim kayıtları yükleniyor…</p>
+        <div id="audit-list" class="history-list"></div>
+      </section>
+      {% endif %}
+    </main>
+    <footer>
+      Kimlik doğrulamalı yerel geliştirme prototipi.
+      {% if current_user.role == "admin" %}<a href="/docs">API belgeleri</a>{% endif %}
+    </footer>
+  </body>
+</html>

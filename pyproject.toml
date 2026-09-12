@@ -1,0 +1,17 @@
+[project]
+name = "avitdata-network-monitor"
+version = "0.3.0"
+description = "Periyodik izleme ve alarm yönetimli kurumsal ağ izleme"
+requires-python = ">=3.12,<3.13"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv", ".venv.broken"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

@@ -4,7 +4,7 @@ Depo adı: **AvIT-Data**.
 
 Bu depo, staj projesinin dördüncü çalışan aşamasıdır: cihaz bazlı gecikme grafiği ve CSV ölçüm raporu; cihaz envanteri, manuel ve periyodik kontrol, kalıcı alarm yönetimi ve Türkçe genel durum paneli. Önceki kimlik doğrulama, CSRF, admin/viewer yetkileri ve denetim kayıtları korunur.
 
-Teslim tek süreçli, yerel bir uygulamadır. Varsayılan **MOCK** modu gerçek ağ isteği göndermez. Her açılışta otomatik izleme duraklatılmıştır. Gerçek ICMP/laboratuvar doğrulaması henüz yapılmadı.
+Teslim tek süreçli, yerel bir uygulamadır. Varsayılan **MOCK** modu gerçek ağ isteği göndermez. Her açılışta otomatik izleme duraklatılmıştır. Windows loopback ICMP doğrulandı; şirket/laboratuvar cihazları bu görev kapsamında sınanmadı. Güncel teslim sonucu [kabul raporundadır](docs/acceptance.md); çalışma mantığı [mimari belgesinde](docs/architecture.md) açıklanır.
 
 ## Özellikler
 
@@ -58,10 +58,10 @@ $Python312 = "C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe"
 & $Python312 -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
 
 & $Python312 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Mevcut `.venv` çalışıyorsa yeniden oluşturmayın; doğrudan içindeki `python.exe` dosyasını kullanın. Sanal ortamı etkinleştirmek zorunlu değildir ve PowerShell güvenlik politikasını değiştirmeye gerek yoktur.
+Mevcut `.venv` çalışıyorsa yeniden oluşturmayın; doğrudan içindeki `python.exe` dosyasını kullanın. Sanal ortamı etkinleştirmek zorunlu değildir ve PowerShell güvenlik politikasını değiştirmeye gerek yoktur. Önce yalnızca çalışma bağımlılıklarını kurup uygulamayı aşağıdaki sırayla doğrulayın; test araçları daha sonra `python -m pip install -r requirements-dev.txt` ile kurulur. Sistem Python, PATH ve `.venv.broken` değiştirilmez.
 
 Örnek yapılandırmayı yalnızca `.env` henüz yoksa kopyalayın:
 
@@ -111,6 +111,65 @@ Parola hiçbir komut satırı argümanına yazılmaz. Parola sıfırlama ve pasi
 - Admin API belgesi: <http://127.0.0.1:8000/docs>
 
 Çıkış işlemi üst bölümdeki **Çıkış yap** düğmesinin `POST` formuyla yapılır. Çıkış hem sunucu oturumunu iptal eder hem tarayıcı cookie'lerini temizler.
+
+## Durdurma, yeniden başlatma ve güvenli SQLite yedeği
+
+Panelde **İzlemeyi durdur** yalnızca otomatik taramayı durdurur; sunucu kapanmaz.
+Sunucuyu çalıştırdığınız terminalde `Ctrl+C` kullanın ve kapanışın tamamlanmasını
+bekleyin. Aynı yapılandırma ve tek worker komutuyla yeniden başlatın. Envanter,
+geçmiş, alarmlar ve görüldü bilgisi korunur; otomatik izleme duraklatılmış açılır.
+Port 8000 doluysa başka boş port seçin ve `APP_BASE_URL` değerini aynı adresle eşleştirin.
+
+Çalışan SQLite dosyasının yalnızca ana `.db` dosyasını kopyalamak koşulsuz güvenli
+değildir; WAL/journal içeriği eksik kalabilir. Aşağıdaki örnek SQLite Backup API'siyle
+tutarlı bir yedek oluşturur. Kaynak yolunu gerçek `DATABASE_URL` dosyanıza göre
+kontrol edin. Komut yeni UUID adlı hedef açar; mevcut yedeğin üzerine yazmaz.
+
+```powershell
+@'
+from contextlib import closing
+from pathlib import Path
+import sqlite3
+import uuid
+
+source = Path("network_monitor.db").resolve(strict=True)
+backup = source.with_name("backup-" + uuid.uuid4().hex + ".db")
+with backup.open("xb"):
+    pass
+with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
+    with closing(sqlite3.connect(backup)) as dst:
+        src.backup(dst)
+        assert dst.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert not dst.execute("PRAGMA foreign_key_check").fetchall()
+        print("Şema:", dst.execute("SELECT version_num FROM alembic_version").fetchone()[0])
+print("Yedek:", backup)
+'@ | .\.venv\Scripts\python.exe -
+```
+
+İşlem hata verirse o hedefi başarılı yedek saymayın; yeni bir dosya adıyla tekrar
+çalıştırın. Yedek kullanıcı/parola hash'i ve oturum kayıtları içerir; teslim ZIP'ine
+eklemeyin, erişimini veritabanı kadar sınırlayın.
+
+Geri yükleme denemesinde aynı kodun `source` değerini seçtiğiniz yedek dosyası,
+`backup` değerini `Path("restore-" + uuid.uuid4().hex + ".db").resolve()` yaparak
+**ayrı bir dosya** üretin. Gerçek veritabanını ezmeyin. Şema sürümünü, integrity ve
+foreign key kontrollerini, cihaz/ölçüm/alarm sayılarını karşılaştırın. Ayrı PowerShell
+terminalinde yalnızca bu deneme dosyasını seçin:
+
+```powershell
+$env:DATABASE_URL = "sqlite:///./restore-BURAYA_OLUSAN_AD.db"
+$env:MONITOR_MODE = "mock"
+$env:APP_BASE_URL = "http://127.0.0.1:8001"
+.\.venv\Scripts\python.exe -m alembic current
+.\.venv\Scripts\python.exe -m alembic check
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
+```
+
+8001 boş olmalı; gerçek oluşan dosya adını yazın. Başlangıçta otomatik izleme
+duraklatılmış kalır. Eski oturumların da yedekte bulunabileceğini unutmayın.
+Deneme bitince `Ctrl+C` ve bu terminali kapatma ile normal `.env` ayarlarına dönün.
+Bu görevde geri yükleme yalnızca kabul veritabanında denendi.
+[Python SQLite Backup API belgesi](https://docs.python.org/3.12/library/sqlite3.html#sqlite3.Connection.backup).
 
 ## Güvenlik yapılandırması
 
@@ -239,7 +298,7 @@ Uygulama için yeni bağımlılık eklenmedi; mevcut sabitlenmiş gereksinimleri
 Tek döngünün açılış/kapanış yerleşimi [FastAPI lifespan belgesine](https://fastapi.tiangolo.com/advanced/events/), kısmi indeks ve SQLite işlem davranışı [SQLAlchemy SQLite belgesine](https://docs.sqlalchemy.org/en/20/dialects/sqlite.html) dayanır. APScheduler veya paylaşılan job store kullanılmaz.
 
 
-### Bu teslimde çalıştırılan doğrulamalar (12 Eylül 2026)
+### Tarihsel aşama 3 doğrulaması (güncel sonuç değildir)
 
 - Başlangıç: 46 mevcut test başarılı. Son durum: **73 test başarılı** (27 yeni risk testi).
 - `ruff check .`: başarılı; `pip check`: bozuk bağımlılık yok.
@@ -288,9 +347,20 @@ Kullanıcı kaynaklı metinler başlangıçtaki boşluk, tab ve kontrol/biçim k
 
 ### Yerel grafik bağımlılığı
 
+Teslim kabulünde Windows `<1 ms` yanıtlarının kesin RTT olmadığı doğrulandı:
+`reply` sayılır, gecikme `null` kalır; özet RTT hesabına girmez, CSV boş hücre üretir.
+Windows ping çıktısı OEM kod sayfasıyla çözülür. Geçmişte türetilmiş sayısal kayıtlar
+otomatik değiştirilmez. [Microsoft ping belgesi](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ping).
+
 Chart.js **4.5.1** tarayıcı UMD dağıtımı `app/static/vendor/chartjs-4.5.1/chart.umd.js` içinde yereldir. MIT lisansı `LICENSE.md`, npm tarball kaynağı, SHA-512 paket bütünlüğü ve dosyanın SHA-256 değeri `provenance.json` içinde saklanır. Paket bütünlüğü indirme sırasında doğrulandı. Çalışırken CDN, Node.js, frontend derlemesi veya tarih adaptörü gerekmez. Python bağımlılıkları ve şema değişmedi; bu aşama için yeni migration yoktur. Mevcut son migration `20260912_0003` kalır.
 
-Uygulama güncellemesi için mevcut sanal ortamı kullanın, `.env` dosyasını ezmeyin:
+Panel/grafik yerel kaynaklıdır; admin `/docs` ekranındaki varsayılan Swagger UI
+ise dış CDN kaynakları kullanır. Dış istekler engellenmiş tarayıcı doğrulaması
+tamamlanmadı. Güncel **126 test** sonucu ve arayüz/Excel/indirme sınırları
+[teslim kabul raporunda](docs/acceptance.md) ayrı ayrı kayıtlıdır.
+
+Geliştirme testleri ve güncelleme için mevcut sanal ortamı kullanın, `.env` dosyasını ezmeyin.
+Yalnız uygulamayı çalıştıracak kullanıcı için yukarıdaki `requirements.txt` kurulumu yeterlidir:
 
 ```powershell
 Set-Location "C:\Users\DELL\AvITData-Network-Monitor"
@@ -306,7 +376,7 @@ Set-Location "C:\Users\DELL\AvITData-Network-Monitor"
 Uygulama kararlarının kaynakları: [Chart.js entegrasyonu](https://www.chartjs.org/docs/latest/getting-started/integration.html), [çizgi grafikleri ve spanGaps](https://www.chartjs.org/docs/latest/charts/line.html), [Python csv](https://docs.python.org/3/library/csv.html), [CWE-1236](https://cwe.mitre.org/data/definitions/1236.html).
 
 
-### Aşama 4 doğrulama kaydı (12 Eylül 2026)
+### Tarihsel aşama 4 doğrulaması (teslim kabulünden önce)
 
 - Başlangıçtaki 73 test korundu; **121 test başarılı** (48 yeni raporlama testi). Ruff ve pip check başarılı. Mevcut Starlette/AnyIO deprecation uyarısı gizlenmedi.
 - Tarih/offset ve mikrosaniye sınırları, tüm dönem özeti, null/sonlu olmayan RTT, kaynak/mod ayrımı, CSV biçimi/formül koruması ve satır sınırı geçici SQLite veritabanlarında test edildi. CSV standart Python okuyucuyla yeniden açıldı.

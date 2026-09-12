@@ -61,8 +61,29 @@ def test_windows_ping_reply_is_parsed_without_shell(monkeypatch: pytest.MonkeyPa
     result = asyncio.run(PingAdapter("Windows").probe("127.0.0.1", 1))
 
     assert result.outcome == "reply"
-    assert result.latency_ms == 0.5
+    assert result.latency_ms is None
     assert captured == [("ping", "-n", "1", "-w", "1000", "127.0.0.1")]
+
+
+@pytest.mark.parametrize("value, expected", [("<1", None), ("=1,25", 1.25), ("=0", 0.0)])
+def test_turkish_oem_ping_reply(monkeypatch, value, expected):
+    monkeypatch.setattr(PingAdapter, "output_encoding", staticmethod(lambda: "cp857"))
+    output = f"127.0.0.1 cevabı: bayt=32 süre{value}ms TTL=128".encode("cp857")
+    install_fake_process(monkeypatch, FakeProcess(stdout=output))
+    result = asyncio.run(PingAdapter("Windows").probe("127.0.0.1", 1))
+    assert result.outcome == "reply"
+    assert result.latency_ms == expected
+
+
+@pytest.mark.parametrize("exception", [FileNotFoundError, PermissionError])
+def test_missing_or_denied_ping_is_error(monkeypatch, exception):
+    async def fail(*args, **kwargs):
+        raise exception()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fail)
+    result = asyncio.run(PingAdapter("Windows").probe("127.0.0.1", 1))
+    assert result.outcome == "error"
+    assert result.latency_ms is None
 
 
 def test_linux_ping_no_reply_is_distinct_from_error(monkeypatch: pytest.MonkeyPatch) -> None:

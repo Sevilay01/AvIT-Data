@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import math
 import platform
 import re
@@ -64,7 +65,7 @@ class MockProbeProvider:
 
 class PingAdapter:
     _RTT_PATTERN = re.compile(
-        r"(?:time|süre)\s*[=<]\s*(?P<latency>\d+(?:[.,]\d+)?)\s*ms",
+        r"(?:time|süre)\s*(?P<operator>[=<])\s*(?P<latency>\d+(?:[.,]\d+)?)\s*ms",
         re.IGNORECASE,
     )
     _NO_REPLY_MARKERS = (
@@ -80,6 +81,13 @@ class PingAdapter:
 
     def __init__(self, system_name: str | None = None) -> None:
         self.system_name = system_name or platform.system()
+
+    @staticmethod
+    def output_encoding() -> str:
+        # Windows console programs use the OEM code page, not necessarily UTF-8.
+        if platform.system() == "Windows":
+            return f"cp{ctypes.windll.kernel32.GetOEMCP()}"
+        return "utf-8"
 
     def command(self, target_ip: str, timeout_seconds: float) -> list[str]:
         if self.system_name == "Windows":
@@ -117,12 +125,13 @@ class PingAdapter:
             await process.communicate()
             return ProbeResult("no_reply")
 
-        output = b"\n".join((stdout, stderr)).decode(errors="replace")
+        output = b"\n".join((stdout, stderr)).decode(self.output_encoding(), errors="replace")
         rtt_match = self._RTT_PATTERN.search(output)
         if rtt_match:
             latency = float(rtt_match.group("latency").replace(",", "."))
-            if "<" in rtt_match.group(0):
-                latency = max(latency / 2, 0.1)
+            if rtt_match.group("operator") == "<":
+                # A bound confirms a reply but does not provide an exact RTT sample.
+                latency = None
             return ProbeResult("reply", latency_ms=latency)
 
         normalized_output = output.casefold()

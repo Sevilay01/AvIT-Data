@@ -1,10 +1,10 @@
-# Beş dakikalık mock demo
+# 5–7 dakikalık mock sunumu
 
 Bu demo gerçek ağ isteği göndermez. Normal kullanıcı veritabanını değiştirmez. Aşağıdaki komutları proje kökünde, ayrı bir PowerShell terminalinde sırayla çalıştırın.
 
 ```powershell
 Set-Location "C:\Users\DELL\AvITData-Network-Monitor"
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m app.demo --path .\demo-monitor.db
 ```
 
@@ -18,12 +18,30 @@ $env:MONITOR_INTERVAL_SECONDS = "5"
 $env:ALARM_THRESHOLD = "3"
 $env:APP_BASE_URL = "http://127.0.0.1:8000"
 .\.venv\Scripts\python.exe -m app.cli create-user --username demo-admin --role admin
+.\.venv\Scripts\python.exe -m app.cli create-user --username demo-viewer --role viewer
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
 Parolayı CLI iki kez görünmeden sorar (15–128 karakter). Komut satırına parola yazmayın. Mevcut hesap varsa tekrar oluşturmayın. Tarayıcıda http://127.0.0.1:8000 adresine girin. Otomatik izleme başlangıçta duraklatılmış olmalıdır.
 
-## Gösterim
+## Süre planı
+
+| Süre | Gösterilecek davranış |
+|---|---|
+| 0:00–0:45 | Admin girişi; MOCK etiketi, başlangıçta duraklatılmış izleme |
+| 0:45–1:30 | Üç cihaz ve envanter alanları; gerçek hedeflere paket gönderilmediği |
+| 1:30–2:15 | İzlemeyi başlat; üçüncü ardışık yanıtsızlıkta alarm, görüldü, aynı alarmın çözülmesi |
+| 2:15–3:00 | Alarmın kim/zaman bilgisi; error ile no_reply farkı; izlemeyi duraklat |
+| 3:00–4:15 | Geçmiş → gecikme grafiği; boşluklar, tam dönem özeti, İstanbul saatleri |
+| 4:15–5:00 | CSV indir; somut filtrelerin eşleşmesi, UTF-8/UTC/ondalık virgül |
+| 5:00–6:15 | Çıkış yap, demo-viewer ile gir; okuma/CSV var, yazma düğmeleri yok |
+| 6:15–6:45 | Duraklatılmış durumu göster; terminalde Ctrl+C ile sunucuyu kapat |
+
+Hesap oluşturma ve paket kurulumunu sunumdan önce tamamlayın. Viewer için ayrı
+parola seçin; parolaları slayta/komut satırına yazmayın. 8000 doluysa hem portu
+hem APP_BASE_URL değerini değiştirin. Güncel doğrulama sınırları [kabul raporundadır](acceptance.md).
+
+## Alarmı adım adım gösterme
 
 1. **MOCK / simülasyon**, üç aktif cihaz ve **Güncel ölçüm yok** metinlerini gösterin.
 2. **Otomatik izlemeyi başlat** düğmesine basın. İlk tarama hemen, sonraki taramalar yaklaşık 5 saniye arayla olur.

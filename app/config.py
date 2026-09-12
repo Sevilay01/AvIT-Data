@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     monitor_interval_seconds: int = Field(default=60, ge=5, le=86400)
     alarm_threshold: int = Field(default=3, ge=1, le=100)
     mock_demo: bool = False
+    csv_max_rows: int = Field(default=50000, ge=1, le=50000)
     ping_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     allowed_target_cidrs: str = "127.0.0.1/32,::1/128"
     max_concurrent_checks: int = Field(default=5, ge=1, le=50)

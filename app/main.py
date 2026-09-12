@@ -17,6 +17,7 @@ from app.api.audit import router as audit_router
 from app.api.auth import register_auth_routes
 from app.api.devices import router as devices_router
 from app.api.monitoring import router as monitoring_router
+from app.api.reports import router as reports_router
 from app.config import Settings, get_settings
 from app.database import Database
 from app.dependencies import AuthContext, get_optional_auth, require_admin
@@ -61,7 +62,7 @@ def create_app(
 
     application = FastAPI(
         title="AvITData Kurumsal Ağ İzleme",
-        version="0.3.0",
+        version="0.4.0",
         description=(
             "Yerel geliştirme için manuel cihaz kontrolü prototipi. Yazma uçları oturum "
             "cookie'sine ek olarak ana web ekranındaki csrf-token meta değerinin "
@@ -78,6 +79,7 @@ def create_app(
     application.state.clock = clock
     application.state.login_rate_limiter = LoginRateLimiter(app_settings)
     application.include_router(monitoring_router)
+    application.include_router(reports_router)
     application.include_router(devices_router)
     application.include_router(audit_router)
     application.mount(

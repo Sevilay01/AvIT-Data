@@ -14,13 +14,22 @@ const historyStatus = document.querySelector("#history-status");
 const auditList = document.querySelector("#audit-list");
 const auditStatus = document.querySelector("#audit-status");
 
+let sessionExpired = false;
+function expireSession() {
+  if (!sessionExpired) {
+    sessionExpired = true;
+    window.dispatchEvent(new Event("session-expired"));
+    window.location.assign("/login");
+  }
+}
 async function request(path, options = {}) {
+  if (sessionExpired) throw new Error("Oturum sona erdi.");
   const method = (options.method || "GET").toUpperCase();
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) headers["X-CSRF-Token"] = csrfToken;
   const response = await fetch(path, { ...options, headers });
   if (response.status === 401) {
-    window.location.assign("/login");
+    expireSession();
     throw new Error("Oturum sona erdi.");
   }
   const data = await response.json().catch(() => ({}));
@@ -135,6 +144,7 @@ async function loadDevices() {
 }
 
 async function loadHistory(deviceId) {
+  window.selectReportDevice?.(deviceId);
   state.selectedDeviceId = deviceId;
   const device = state.devices.find((item) => item.id === deviceId);
   historyStatus.className = "state-message";
@@ -386,6 +396,6 @@ document.querySelector("#alarms-next").addEventListener("click", () => { alarmOf
 async function refreshPanels() {
   try { await Promise.all([loadOverview(), loadAlarms()]); }
   catch (error) { showPanelError(error); }
-  finally { window.setTimeout(refreshPanels, 5000); }
+  finally { if (!sessionExpired) window.setTimeout(refreshPanels, 5000); }
 }
 refreshPanels();

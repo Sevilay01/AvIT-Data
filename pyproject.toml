@@ -1,6 +1,6 @@
 [project]
 name = "avitdata-network-monitor"
-version = "0.3.0"
+version = "0.4.0"
 description = "Periyodik izleme ve alarm yönetimli kurumsal ağ izleme"
 requires-python = ">=3.12,<3.13"
 

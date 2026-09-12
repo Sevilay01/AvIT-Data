@@ -207,3 +207,12 @@ select { padding: .6rem; border: 1px solid #cbd5e1; border-radius: .5rem; backgr
 #alarms-list .history-row { grid-template-columns: minmax(0, 1fr) auto; }
 #alarm-detail { overflow-wrap: anywhere; line-height: 1.6; }
 .overview-panel h2, .alarms-panel h2 { margin-bottom: 1rem; }
+
+.report-panel { grid-column: 1 / -1; min-width: 0; }
+.report-panel h2 { margin-bottom: 1rem; }
+.report-panel fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 1rem; min-width: 0; }
+.report-chart { position: relative; height: 320px; width: 100%; }
+.report-table-scroll { overflow-x: auto; }
+.report-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.report-table td, .report-table th { text-align: left; padding: .5rem; border-bottom: 1px solid var(--line); }
+#report-status, #report-csv-status { overflow-wrap: anywhere; }

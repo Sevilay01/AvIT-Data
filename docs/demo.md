@@ -41,3 +41,15 @@ Mock dizisinin konumu yalnızca süreç belleğindedir: uygulama yeniden başlat
 Sunucuyu `Ctrl+C` ile kapatın, demo terminalini kapatın. Yeni terminalde `.env` içindeki normal `DATABASE_URL`, `MOCK_DEMO=false`, `MONITOR_INTERVAL_SECONDS=60` değerlerini kullanın. Normal veritabanı migration'ı gerekiyorsa sunucu kapalıyken yedek aldıktan sonra `python -m alembic upgrade head` çalıştırın.
 
 Teslimde `--reload` kullanmayın. Geliştirme için `--reload` yalnızca otomatik izleme duraklatılmışken kullanılabilir. Aynı SQLite dosyasıyla ikinci uygulama süreç kilidi nedeniyle açılmaz. ICMP kullanımı yalnızca izinli laboratuvarda ayrıca doğrulanacaktır; bu mock sunumu o doğrulamanın yerine geçmez.
+
+
+## Alarm demosunun ardından grafik ve CSV (aşama 4)
+
+1. Yukarıdaki alarm yaşam döngüsünü gösterip otomatik izlemeyi durdurun. **Demo · Alarm yaşam döngüsü → Geçmiş** seçin.
+2. **Gecikme grafiği ve CSV** bölümünde varsayılan **Son 24 saat**, **MOCK / simülasyon**, **Tümü** filtrelerini ve Europe/Istanbul olarak yazılan somut aralığı gösterin. Grafikte reply noktaları RTT taşır; yanıtsızlık/error/eksik RTT 0 ms çizilmez.
+3. **Son 1 saat → Filtreleri uygula** seçin. Ölçümler arasındaki gerçek zaman aralıklarını, tam dönemin toplam/sonuç sayılarını ve **Yanıt oranı** değerini anlatın. Hatalar ayrı sayılır; oran SLA veya kesintisiz çalışma süresi değildir.
+4. Kaynağı **Zamanlanmış** veya **Manuel** yapıp uygulayın. Demo tamamen otomatik yapıldıysa manuel filtresi boş olabilir. **ICMP** modunu seçince mock kayıtların kaybolduğunu gösterin; bu işlem gerçek ping başlatmaz. **Özel aralık** alanları İstanbul saatidir, en fazla 30 gün seçilebilir.
+5. Yeniden **MOCK / Tümü** uygulayıp **CSV indir** seçin. İndirme ekranda yazan başlangıç/bitişi aynen kullanır. Dosyada tarihlerin UTC, RTT ondalığının virgül, ayırıcının noktalı virgül olduğunu gösterin. Excel'e Veri → Metin/CSV'den, UTF-8 ve Türkçe sayı yerel ayarıyla içe aktarma adımları README'dedir. Excel'de fiilî test bu teslimde yapılmadı.
+6. Viewer hesabıyla aynı raporu ve CSV düğmesini gösterebilirsiniz; izlemeyi başlatma ve diğer yazma düğmeleri viewer için bulunmaz.
+
+Grafikte en yeni 2.000 ölçüm sınırı ve gerçek ölçüm kapsamı gösterilir; özet tüm filtrelenmiş dönemi kapsar. CSV sınırı varsayılan 50.000 satırdır; aşımda aralık daraltılması istenir. Raporu güncellemek için **Filtreleri uygula** kullanılır, otomatik grafik timer'ı yoktur. Chart.js yerel dosyadan gelir; grafik için internet/CDN gerekmez.

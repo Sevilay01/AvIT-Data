@@ -1,6 +1,8 @@
 # AvITData Kurumsal Ağ İzleme ve Arıza Uyarı Sistemi
 
-Bu depo, staj projesinin üçüncü çalışan aşamasıdır: cihaz envanteri, manuel ve periyodik kontrol, kalıcı alarm yönetimi ve Türkçe genel durum paneli. Önceki kimlik doğrulama, CSRF, admin/viewer yetkileri ve denetim kayıtları korunur.
+Depo adı: **AvIT-Data**.
+
+Bu depo, staj projesinin dördüncü çalışan aşamasıdır: cihaz bazlı gecikme grafiği ve CSV ölçüm raporu; cihaz envanteri, manuel ve periyodik kontrol, kalıcı alarm yönetimi ve Türkçe genel durum paneli. Önceki kimlik doğrulama, CSRF, admin/viewer yetkileri ve denetim kayıtları korunur.
 
 Teslim tek süreçli, yerel bir uygulamadır. Varsayılan **MOCK** modu gerçek ağ isteği göndermez. Her açılışta otomatik izleme duraklatılmıştır. Gerçek ICMP/laboratuvar doğrulaması henüz yapılmadı.
 
@@ -193,7 +195,7 @@ Testler yalnızca geçici veritabanlarında kullanıcı oluşturur, kontrol edil
 
 ## Sınırlar
 
-Uygulama yalnızca `127.0.0.1` üzerinde çalıştırılmalıdır. SNMP, TCP taraması, e-posta/Telegram bildirimi, PDF, grafik, raporlama, otomatik geçmiş silme ve internet dağıtımı bu aşamada yoktur. Çok kullanıcılı/çok süreçli dağıtım öncesinde paylaşılan hız sınırlama deposu, HTTPS sonlandırma ve operasyonel anahtar/yedekleme yönetimi ayrıca tasarlanmalıdır.
+Uygulama yalnızca `127.0.0.1` üzerinde çalıştırılmalıdır. SNMP, TCP taraması, e-posta/Telegram bildirimi, PDF, toplu rapor tasarımcısı, otomatik geçmiş silme ve internet dağıtımı bu aşamada yoktur. Çok kullanıcılı/çok süreçli dağıtım öncesinde paylaşılan hız sınırlama deposu, HTTPS sonlandırma ve operasyonel anahtar/yedekleme yönetimi ayrıca tasarlanmalıdır.
 
 
 ## Periyodik izleme ve alarm kuralları
@@ -245,3 +247,70 @@ Tek döngünün açılış/kapanış yerleşimi [FastAPI lifespan belgesine](htt
 - Uvicorn tek worker ile gerçek açılış ve Windows'ta ikinci süreç engellemesi doğrulandı.
 - Yerel tarayıcıda geçici mock veritabanıyla başlat/durdur, alarm açılma, tekrarlayan yanıtsızlıkta tek alarm, görüldü ve aynı alarmın çözülmesi doğrulandı. Dar panel görünümü incelendi.
 - Tek mevcut Starlette/AnyIO deprecation uyarısı görünür bırakıldı. Gerçek ICMP gönderilmedi; laboratuvar doğrulaması ve diğer işletim sistemleri bu teslimde sınanmadı.
+
+
+## Cihaz bazlı gecikme grafiği ve CSV (aşama 4)
+
+Admin ve viewer bir cihazın **Geçmiş** düğmesine basınca **Gecikme grafiği ve CSV** bölümü açılır. Pasif cihaz geçmişi de okunabilir. Varsayılan dönem son 24 saattir; son 1 saat, son 7 gün veya özel aralık seçilebilir. **Filtreleri uygula** verileri yeniden okur; ölçüm veya alarm başlatmaz. Yeni ölçümleri rapora almak için filtreleri yeniden uygulayın.
+
+Arayüzde tüm rapor tarihleri **Europe/Istanbul** olarak etiketlenir; bilgisayarın yerel saat diliminden bağımsızdır. Özel tarih alanları da İstanbul yerel saatidir. Seçili somut başlangıç/bitiş, mod ve kaynak ekranda yazılır. Başlangıç dahil, bitiş hariçtir (`start <= checked_at < end`). CSV indirme, ekranda son başarıyla uygulanan **aynı somut filtreleri** kullanır; indirme sırasında son 24 saat tekrar hesaplanmaz. Filtre düzenlenince eski rapor/CSV seçimi geçersizleşir. Eski veya iptal edilmiş HTTP yanıtları yeni seçimi ezemez.
+
+### Salt okunur API
+
+```text
+GET /api/devices/{id}/metrics
+GET /api/devices/{id}/measurements.csv
+```
+
+Ortak query parametreleri: `start`, `end`, `probe_mode=mock|icmp`, `source=manual|scheduled|all`. `start/end` birlikte verilmelidir; ikisi de yoksa sunucu saatine göre son 24 saat kullanılır. Mod verilmezse çalışma modu, kaynak verilmezse `all` kullanılır. Örnek tarih: `2026-09-12T09:00:00+03:00` veya `2026-09-12T06:00:00Z`; URL içinde `+` işareti `%2B` olarak kodlanmalıdır. Saniye ve saat dilimi zorunludur; en fazla altı basamak saniye kesri desteklenir. Karşılaştırma UTC üzerinde yapılır. Saat dilimsiz/hatalı tarih, eksik tarih çifti, ters/eşit aralık ve **30 günü aşan dönem** `422` döndürür. Bilinmeyen cihaz `404`, anonim erişim `401` alır. Rapor uçları yazma/CSRF kurallarını değiştirmez.
+
+`metrics` yanıtı `filters`, `device`, `summary` ve `graph` içerir. `graph` alanında `total_count`, `shown_count`, `limit`, `truncated`, `first_checked_at`, `last_checked_at`, `gap_threshold_seconds` ve noktalar bulunur. Grafik en yeni **2.000 ölçümü** `(checked_at, measurement_id)` sırasıyla gösterir; sınır aşımı ekranda açıkça yazılır. Grafik ekseni gösterilen ölçümlerin gerçek zaman aralığına odaklanır; özet yine seçilen dönemin **tamamını** kapsar. Geçmiş sonuçların kayıtlı hedef IP ve hedef sürümleri kullanılır; bugünkü cihaz IP'si geçmişe yazılmaz.
+
+Grafik sayısal zaman ekseni kullanır: düzensiz ölçümler eşit aralıklı yerleştirilmez. `no_reply`, `error`, eksik/geçersiz RTT `null` noktadır, 0 ms değildir. Bu noktalar arasında, hedef/sürüm değişiminde veya mevcut `MONITOR_INTERVAL_SECONDS` değerinin iki katından uzun gözlem boşluğunda çizgi çizilmez. Boşluk eşiği ekranda yazılır; geçmişte kullanılan kontrol aralığının tarihsel kaydı olmadığı için mevcut ayar esas alınır. Tek RTT bir nokta, boş veri açık mesaj olarak gösterilir. RTT noktalarının tooltip'lerinde zaman, hedef, sonuç, mod, kaynak ve RTT bulunur; RTT'si olmayan kayıtlar alt ayrıntı tablosundan görülebilir.
+
+### Özetin anlamı
+
+RTT sayısı/ortalaması/minimumu/maksimumu yalnızca `reply` olan, sonlu ve sıfır veya pozitif RTT taşıyan ölçümlerden hesaplanır. Başarılı ama RTT'si bilinmeyen yanıt, reply sayısına dahil olur fakat RTT istatistiklerine dahil olmaz.
+
+**Yanıt oranı = reply / (reply + no_reply) × 100.** Örneğin 3 reply, 1 no_reply ve 2 error için toplam 6, yanıt oranı %75, kontrol hatası 2'dir. `error` paydadan çıkarılır ve ayrı gösterilir. Bu oran SLA, kesintisiz çalışma süresi, paket kaybı veya gerçek ağ kullanılabilirliği değildir. Payda sıfırsa oran, geçerli RTT yoksa istatistikler `null` olur; arayüzde `—` gösterilir. Modlar raporda birleşmez; **MOCK / SİMÜLASYON** etiketi görünürdür.
+
+### Türkçe CSV ve Excel içe aktarma
+
+**CSV indir**, filtrelere uyan ham kayıtları tarih sırasıyla üretir. Varsayılan üst sınır **50.000 satır**dır. `CSV_MAX_ROWS` ile 1–50.000 aralığında daha düşük sınır belirlenebilir. Sınır aşılırsa dosya başlamadan `422` ve tarih aralığını daraltma mesajı döner; kısmi başarılı dosya verilmez. En fazla sınır + 1 kayıt okunur ve dosya yanıt öncesinde bellekte tamamlanır; sınırsız veri yüklenmez. Raporlar static dizinine veya sunucuda kalıcı dosyaya yazılmaz; yalnızca kısa okuma transaction'ı kullanılır.
+
+Sütunlar: `measurement_id`, `device_id`, `device_name`, `target_ip`, `checked_at_utc`, `probe_mode`, `trigger_source`, `outcome`, `latency_ms`. `device_name` için tarihsel snapshot yoktur; **güncel cihaz adı** kullanılır. `target_ip` ölçüm anındaki hedef, tarihler **UTC ISO 8601** değeridir. CSV ham RTT alanını korur; eksik veya sonlu olmayan RTT boş hücredir.
+
+Dosya Python `csv` modülüyle **UTF-8 BOM**, **noktalı virgül** ayırıcı ve CRLF satır sonuyla üretilir. Ondalık ayırıcı **virgül**dür (örn. `1,25`); null boş hücredir. Tırnak, noktalı virgül ve satır sonu içeren metinler CSV kurallarıyla kaçırılır. Dosya adı sunucu tarafından oluşturulur; istemciden dosya yolu alınmaz.
+
+Excel'de **Veri → Metin/CSV'den** ile dosyayı seçin; kodlamayı **65001: UTF-8**, ayırıcıyı **noktalı virgül**, sayı yerel ayarını **Türkçe (Türkiye)** olarak seçin. Cihaz adı/IP ve UTC tarih sütunlarını gerekirse **Metin** türünde içe aktarın; Excel'in otomatik tarih/sayı dönüşümüne bırakmayın.
+
+Kullanıcı kaynaklı metinler başlangıçtaki boşluk, tab ve kontrol/biçim karakterleri atlanarak denetlenir. `=`, `+`, `-`, `@` ile başlayan riskli hücrelerin başına tek tırnak (`'`) eklenir; yalnızca CSV çift tırnağına güvenilmez. Bu işlem yalnızca dışa aktarım içindir; veritabanı değişmez. Amaç Excel'in hücreyi formül yerine metin olarak ele almasıdır. CSV okuyucuda bu koruyucu tek tırnak görünür olabilir. Excel uygulamasında fiilî test yapılmadı; diğer tablo uygulamaları ve dosyanın yeniden kaydedilip açılması için evrensel güvenlik garantisi verilmez.
+
+### Yerel grafik bağımlılığı
+
+Chart.js **4.5.1** tarayıcı UMD dağıtımı `app/static/vendor/chartjs-4.5.1/chart.umd.js` içinde yereldir. MIT lisansı `LICENSE.md`, npm tarball kaynağı, SHA-512 paket bütünlüğü ve dosyanın SHA-256 değeri `provenance.json` içinde saklanır. Paket bütünlüğü indirme sırasında doğrulandı. Çalışırken CDN, Node.js, frontend derlemesi veya tarih adaptörü gerekmez. Python bağımlılıkları ve şema değişmedi; bu aşama için yeni migration yoktur. Mevcut son migration `20260912_0003` kalır.
+
+Uygulama güncellemesi için mevcut sanal ortamı kullanın, `.env` dosyasını ezmeyin:
+
+```powershell
+Set-Location "C:\Users\DELL\AvITData-Network-Monitor"
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Önceki aşamanın şeması henüz uygulanmadıysa, yedek alıp sunucu kapalıyken `python -m alembic upgrade head` çalıştırın. Bu aşamada yeni migration eklenmedi.
+
+Uygulama kararlarının kaynakları: [Chart.js entegrasyonu](https://www.chartjs.org/docs/latest/getting-started/integration.html), [çizgi grafikleri ve spanGaps](https://www.chartjs.org/docs/latest/charts/line.html), [Python csv](https://docs.python.org/3/library/csv.html), [CWE-1236](https://cwe.mitre.org/data/definitions/1236.html).
+
+
+### Aşama 4 doğrulama kaydı (12 Eylül 2026)
+
+- Başlangıçtaki 73 test korundu; **121 test başarılı** (48 yeni raporlama testi). Ruff ve pip check başarılı. Mevcut Starlette/AnyIO deprecation uyarısı gizlenmedi.
+- Tarih/offset ve mikrosaniye sınırları, tüm dönem özeti, null/sonlu olmayan RTT, kaynak/mod ayrımı, CSV biçimi/formül koruması ve satır sınırı geçici SQLite veritabanlarında test edildi. CSV standart Python okuyucuyla yeniden açıldı.
+- Yerel Uvicorn üzerinde admin ve viewer ile grafik, kaynak/mod filtresi, İstanbul özel aralığı, boş veri ve 2.005 kayıttan en yeni 2.000'inin gösterildiği mesaj doğrulandı. Grafik boşlukları görsel olarak incelendi; tarayıcı hata günlüğü temizdi.
+- Gerçek yerel HTTP CSV yanıtı dosyaya yazılıp `csv.DictReader` ile yeniden açıldı: 2.005 ham satır, Türkçe cihaz adı, tarihsel hedef ve ondalık virgül doğrulandı; grafik aynı filtrelerde 2.000 noktaydı.
+- Gömülü tarayıcı CSV'nin hazırlanmasını gösterdi ancak indirme olayı bildirmedi; tarayıcının dosyayı diske kaydetmesi doğrulanamadı. Excel ve başka tablo uygulamalarında fiilî test yapılmadı.
+- Tüm grafik script'lerinin localhost'tan geldiği doğrulandı; makinenin internet bağlantısı fiziksel olarak kesilmedi. Gerçek ICMP/laboratuvar trafiği üretilmedi.

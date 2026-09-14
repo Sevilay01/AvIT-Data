@@ -14,7 +14,7 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from scripts.common import ROOT, require_python312, run, safe_env, venv_python
+from scripts.common import ROOT, configure_console, require_python312, run, safe_env, venv_python
 
 
 def local(evidence):
@@ -185,6 +185,7 @@ def delivery(archive, work_dir, python, evidence):
 
 
 def main():
+    configure_console()
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
     quality = commands.add_parser("local")

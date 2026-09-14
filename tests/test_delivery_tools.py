@@ -93,3 +93,30 @@ def test_cli_failure_returns_nonzero_and_does_not_read_ambient_database(tmp_path
     assert "never-log-this" not in result.stdout + result.stderr
     assert protected.read_bytes() == b"untouched"
     assert not (tmp_path / "backup.db").exists()
+
+
+def test_verifier_prints_turkish_under_an_ascii_parent_console(tmp_path):
+    from scripts.common import ROOT
+
+    env = safe_env()
+    env.update(PYTHONIOENCODING="ascii", PYTHONUTF8="0")
+    code = (
+        "import scripts.verify as verify\n"
+        "verify.local = lambda evidence: print('Türkçe doğrulama: ı ş ğ')\n"
+        "raise SystemExit(verify.main())\n"
+    )
+    result = subprocess.run(
+        [
+            sys.executable, "-c", code, "local",
+            "--evidence", str(tmp_path / "console-evidence.json"),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Türkçe doğrulama: ı ş ğ" in result.stdout
+    assert "UnicodeEncodeError" not in result.stdout + result.stderr

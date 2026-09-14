@@ -9,9 +9,11 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import String, and_, case, func, literal, select, type_coerce
+from sqlalchemy import String, and_, case, func, select, type_coerce
 
 from app.models import MonitoringResult
+from app.services.timestamps import iso_utc
+from app.services.timestamps import timestamp_key as stored_timestamp_key
 
 GRAPH_LIMIT = 2000
 MAX_RANGE = timedelta(days=30)
@@ -30,10 +32,6 @@ CSV_COLUMNS = (
 ISO_TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
 )
-
-
-def iso_utc(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def parse_timestamp(value: str) -> datetime:
@@ -73,19 +71,7 @@ class ReportFilters:
 
 
 def timestamp_key():
-    # Existing SQLite timestamps have 0, 3 or 6 fractional digits. Normalize only
-    # in the query: raw lexical comparisons misorder whole and fractional seconds.
-    raw = type_coerce(MonitoringResult.checked_at, String)
-    fraction = case(
-        (func.substr(raw, 20, 1) == ".", func.replace(func.substr(raw, 21, 6), "Z", "")),
-        else_="",
-    )
-    return (
-        func.substr(raw, 1, 19)
-        + literal(".")
-        + func.substr(fraction + literal("000000"), 1, 6)
-        + literal("Z")
-    )
+    return stored_timestamp_key(MonitoringResult.checked_at)
 
 
 def conditions(device_id: int, filters: ReportFilters):

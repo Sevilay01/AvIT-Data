@@ -8,6 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def configure_console():
+    """Keep Turkish diagnostic output usable under redirected Windows consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def safe_env(database=None):
     allowed = {
         "SYSTEMROOT",

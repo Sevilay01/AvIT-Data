@@ -64,11 +64,13 @@ docs/operations.md
 docs/retention.md
 pyproject.toml
 release-files.txt
+requirements-browser.txt
 requirements-dev.in
 requirements-dev.txt
 requirements.in
 requirements.txt
 scripts/__init__.py
+scripts/browser_smoke.py
 scripts/common.py
 scripts/lock_dependencies.py
 scripts/package.py

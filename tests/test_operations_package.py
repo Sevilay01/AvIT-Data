@@ -467,5 +467,5 @@ def test_session_retention_preserves_exact_expiry_and_revocation_boundaries(app,
     )
     assert report["deleted"]["sessions"] == 2
     with app.state.database.session_factory() as db:
-        for (kind, delta), session_id in ids.items():
+        for (_kind, delta), session_id in ids.items():
             assert (db.get(UserSession, session_id) is None) == (delta == -1)

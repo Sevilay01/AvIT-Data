@@ -12,9 +12,10 @@ from typing import Protocol
 from sqlalchemy import text
 
 from app.config import Settings
-from app.models import Device, MonitoringResult
+from app.models import Device, MonitoringHeartbeat, MonitoringResult
 from app.services.alarms import evaluate_result
 from app.services.audit import add_audit_log
+from app.services.event_logging import log_event
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +124,7 @@ class PingAdapter:
         except TimeoutError:
             process.kill()
             await process.communicate()
-            return ProbeResult("no_reply")
+            return ProbeResult("error", error_message="Ping işlemi süre sınırında tamamlanamadı.")
 
         output = b"\n".join((stdout, stderr)).decode(self.output_encoding(), errors="replace")
         rtt_match = self._RTT_PATTERN.search(output)
@@ -169,8 +170,9 @@ class IcmpProbeProvider:
 
 
 class MonitoringService:
-    def __init__(self, provider: ProbeProvider, max_concurrent_checks: int) -> None:
+    def __init__(self, provider: ProbeProvider, max_concurrent_checks: int, settings=None) -> None:
         self.provider = provider
+        self.settings = settings
         self.epoch = 0
         self._semaphore = asyncio.Semaphore(max_concurrent_checks)
         self._active_devices: set[int] = set()
@@ -224,7 +226,12 @@ class MonitoringService:
                 )
                 db.add(result)
                 db.flush()
-                evaluate_result(db, result, threshold, actor)
+                evaluate_result(db, result, threshold, actor, self.settings)
+                heartbeat = db.get(MonitoringHeartbeat, 1)
+                if heartbeat is None:
+                    heartbeat = MonitoringHeartbeat(id=1)
+                    db.add(heartbeat)
+                heartbeat.last_check_completed_at = result.checked_at
                 if source == "manual":
                     add_audit_log(
                         db,
@@ -237,6 +244,12 @@ class MonitoringService:
                         **actor,
                     )
                 db.commit()
+                log_event(
+                    "monitor.check",
+                    f"measurement:{result.id}",
+                    status=result.outcome,
+                    device_id=device_id,
+                )
                 return result
 
         return await self.check(device_id, target_ip, save=save)
@@ -248,4 +261,4 @@ def build_monitoring_service(settings: Settings) -> MonitoringService:
         provider = IcmpProbeProvider(settings)
     else:
         provider = MockProbeProvider(settings.mock_demo)
-    return MonitoringService(provider, settings.max_concurrent_checks)
+    return MonitoringService(provider, settings.max_concurrent_checks, settings)

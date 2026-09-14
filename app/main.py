@@ -17,16 +17,20 @@ from app.api.audit import router as audit_router
 from app.api.auth import register_auth_routes
 from app.api.devices import router as devices_router
 from app.api.monitoring import router as monitoring_router
+from app.api.operations import router as operations_router
 from app.api.reports import router as reports_router
 from app.config import Settings, get_settings
 from app.database import Database
 from app.dependencies import AuthContext, get_optional_auth, require_admin
-from app.models import utc_now
+from app.models import MonitoringHeartbeat, RecoveryGuard, utc_now
 from app.schemas import HealthResponse
+from app.services.event_logging import configure_operational_logging
 from app.services.monitoring import build_monitoring_service
+from app.services.notifications import NotificationWorker
 from app.services.process_lock import DatabaseProcessLock
 from app.services.scheduler import MonitoringScheduler
 from app.services.security import LoginRateLimiter, token_matches
+from app.version import SCHEMA_HEAD, VERSION
 
 APP_DIRECTORY = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=APP_DIRECTORY / "templates")
@@ -44,17 +48,39 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        nonlocal app_settings
+        configure_operational_logging()
         process_lock = DatabaseProcessLock(app_settings.database_url)
         process_lock.acquire()
         try:
+            with database.session_factory() as db:
+                recovery_hold = db.get(RecoveryGuard, 1) is not None
+            application.state.recovery_hold = recovery_hold
+            if recovery_hold:
+                app_settings = app_settings.model_copy(update={
+                    "monitor_mode": "mock", "notification_mode": "off", "mock_demo": False,
+                })
+                application.state.settings = app_settings
+                application.state.monitoring_service = build_monitoring_service(app_settings)
             scheduler = MonitoringScheduler(
                 database, application.state.monitoring_service, app_settings, clock
             )
             application.state.scheduler = scheduler
             scheduler.reset()
+            with database.session_factory() as db:
+                heartbeat = db.get(MonitoringHeartbeat, 1)
+                if heartbeat is None:
+                    heartbeat = MonitoringHeartbeat(id=1)
+                    db.add(heartbeat)
+                heartbeat.process_started_at = clock()
+                db.commit()
+            worker = NotificationWorker(database, app_settings, clock, recovery_hold=recovery_hold)
+            application.state.notification_worker = worker
+            worker.start()
             try:
                 yield
             finally:
+                await worker.stop()
                 await scheduler.stop()
         finally:
             application.state.database.dispose()
@@ -62,7 +88,7 @@ def create_app(
 
     application = FastAPI(
         title="AvITData Kurumsal Ağ İzleme",
-        version="0.4.0",
+        version=VERSION,
         description=(
             "Yerel geliştirme için manuel cihaz kontrolü prototipi. Yazma uçları oturum "
             "cookie'sine ek olarak ana web ekranındaki csrf-token meta değerinin "
@@ -79,6 +105,7 @@ def create_app(
     application.state.clock = clock
     application.state.login_rate_limiter = LoginRateLimiter(app_settings)
     application.include_router(monitoring_router)
+    application.include_router(operations_router)
     application.include_router(reports_router)
     application.include_router(devices_router)
     application.include_router(audit_router)
@@ -117,6 +144,19 @@ def create_app(
         with database.session_factory() as session:
             session.execute(text("SELECT 1"))
         return HealthResponse(status="ok")
+
+    @application.get("/ready", tags=["sistem"])
+    def readiness():
+        try:
+            with database.session_factory() as session:
+                revision = session.scalar(text("SELECT version_num FROM alembic_version"))
+            ready = revision == SCHEMA_HEAD and application.state.notification_worker.running
+        except Exception:
+            ready = False
+        # Readiness is dependency readiness, never proof of fresh device data.
+        return JSONResponse(
+            {"status": "ready" if ready else "not_ready"}, status_code=200 if ready else 503
+        )
 
     @application.get("/docs", include_in_schema=False)
     def swagger_ui(admin: Admin):

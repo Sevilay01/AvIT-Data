@@ -1,5 +1,7 @@
 # Mimari ve çalışma akışı
 
+Güncel sürüm: **0.5.0**, şema **20260913_0004**. Tek kurum ve tek süreç sınırı sürer.
+
 Uygulama, tek Uvicorn sürecinde çalışan FastAPI servisidir. Jinja2 ilk Türkçe
 sayfayı üretir; yerel JavaScript dosyaları aynı sunucudaki JSON API'lerini okur.
 SQLite kalıcı veriyi, Alembic şema geçmişini tutar. Başlangıçta migration veya
@@ -59,7 +61,7 @@ flowchart TD
     K --> V[Aktif cihaz ve hedef sürümünü oku]
     V --> P[Cihaz kilidi ve semaphore altında sağlayıcı]
     P --> B[Kısa BEGIN IMMEDIATE işlemi]
-    B --> R[Sonuç + sayaç + alarm + audit]
+    B --> R[Sonuç + sayaç + alarm + audit + outbox + kontrol heartbeat]
     R --> C[Commit ve kilidi bırak]
 ```
 
@@ -110,6 +112,42 @@ yalnızca yapılandırılmış CIDR'lere izin verir ve sistem `ping` komutunu sh
 kullanmadan çalıştırır. Windows'ta OEM kod sayfası Türkçe çıktıyı çözer. `<1 ms`
 yanıtı `reply` ve `latency_ms=null` olur: üst sınırdan sahte RTT hesaplanmaz.
 Mock ve ICMP geçmişi/alarmları birbirine karıştırılmaz.
+
+Ping programının watchdog süresini aşması 0.5.0'da teknik `error` kaydedilir;
+bu, ping çıktısının bildirdiği hedef yanıtsızlığından farklıdır. Teknik hata alarm
+açmaz veya çözmez.
+
+## 0.5.0 bildirim ve bakım katmanı
+
+`services/notifications.py` geçiş başına kararlı olay kimliğiyle outbox ekler;
+`UNIQUE(event_id, channel, target_key)` DB korumasıdır. Gönderici aynı süreçte ayrı
+`asyncio` görevi; kısa DB claim/complete işlemleri thread'de, SMTP toplam deadline
+altında asenkron çalışır. Aynı alarmda en eski aktif olay önce işlenir. SQLite
+süreç kilidi tek worker sahibini korur; bu çok süreç koordinasyonu değildir.
+Gönderim sırasında DB transaction'ı açık tutulmaz.
+
+`maintenance_windows` cihaz, `alarm_silences` alarm kapsamını tutar.
+`services/maintenance.py` yarı açık UTC aralıklarını ve taze ölçümü değerlendirir.
+Referanslar outbox'ta kalır. Worker taze ölçüm olmadan sentetik durum üretmez.
+`activated_at` bakım başlangıcının işlenmesini, `reconciled_at` bastırılmış olayların
+özetle kapatılmasını kalıcı izler. Bunların değişimi ve yeni özet aynı transaction'dadır.
+
+`monitoring_heartbeat` süreç başlangıcı, son zamanlayıcı turu, tamamlanan tarama ve
+kontrol zamanını korur. `/api/summary` bunları runtime duraklama, hedef/mod filtreli
+freshness ve kuyruk sayılarıyla birleştirir. `/health` korunur; `/ready` bağımlılık
+hazır oluşudur ve sağlıklı tarama kanıtı sayılmaz.
+
+`api/operations.py` mevcut admin/viewer ve CSRF bağımlılıklarını kullanır.
+`static/operations.js` panel ve istek yardımcılarına bağlanır; kullanıcı verileri
+`textContent` ile gösterilir. Gerekçe/dönem bakım kayıtlarında, işlem kimliği audit'te
+tutulur. JSON logları alan izin listesi kullanır; SMTP yanıtı ve sırlar dahil edilmez.
+
+SMTP STARTTLS/implicit TLS için sistem CA doğrulaması zorunludur. Varsayılan kapalı,
+mock olaylar ağsızdır. Outbox'ta adres/şifre yerine sabit mod ve hedef parmak izi
+bulunur; ayar değişikliği eski olayları başka alıcıya taşımaz. SMTP kabulüyle DB
+complete commit'i arasında çökme kopya oluşturabilir; tam bir kez teslim yoktur.
+İşletim ayrıntıları [kılavuzda](operations.md), dönüşüm sınırları
+[yol haritasında](enterprise-roadmap.md) tanımlıdır.
 
 Rapor uçları kontrol başlatmaz. Ortak UTC filtreleri başlangıcı dahil, bitişi hariç
 tutar; en fazla 30 gün seçilir. SQL özeti tüm dönemi kapsar, grafik en yeni 2.000

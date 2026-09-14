@@ -1,5 +1,8 @@
 # 5–7 dakikalık mock sunumu
 
+Bu grafik/alarm senaryosu korunur. 0.5.0 bildirim/bakım paketi için ayrıca
+[sahte saatli ağsız demo ve manuel kontrol listesi](demo-enterprise.md) vardır.
+
 Bu demo gerçek ağ isteği göndermez. Normal kullanıcı veritabanını değiştirmez. Aşağıdaki komutları proje kökünde, ayrı bir PowerShell terminalinde sırayla çalıştırın.
 
 ```powershell

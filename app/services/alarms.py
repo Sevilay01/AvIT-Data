@@ -37,7 +37,11 @@ def close_device_alarms(db, device, reason, now, actor):
     )
 
 
-def evaluate_result(db, result: MonitoringResult, threshold: int, actor):
+def evaluate_result(db, result: MonitoringResult, threshold: int, actor, settings=None):
+    from app.config import Settings
+    from app.services.notifications import enqueue
+
+    settings = settings or Settings(_env_file=None, notification_mode="off")
     if result.evaluated:
         return
     claimed = db.execute(
@@ -98,6 +102,7 @@ def evaluate_result(db, result: MonitoringResult, threshold: int, actor):
             db.add(alarm)
             db.flush()
             audit_alarm(db, alarm, "opened", now, actor)
+            enqueue(db, alarm, "opened", "opened", now, settings)
     else:
         state.no_reply_count = 0
         state.first_no_reply_at = None
@@ -107,3 +112,4 @@ def evaluate_result(db, result: MonitoringResult, threshold: int, actor):
             alarm.ended_at = now
             alarm.end_reason = "reply_received"
             audit_alarm(db, alarm, "resolved", now, actor)
+            enqueue(db, alarm, "resolved", "resolved", now, settings)

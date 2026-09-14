@@ -9,6 +9,7 @@
     <script src="{{ url_for('static', path='/vendor/chartjs-4.5.1/chart.umd.js') }}" defer></script>
     <script src="{{ url_for('static', path='/app.js') }}" defer></script>
     <script src="{{ url_for('static', path='/reports.js') }}" defer></script>
+    <script src="{{ url_for('static', path='/operations.js') }}" defer></script>
   </head>
   <body data-monitor-mode="{{ monitor_mode }}" data-user-role="{{ current_user.role }}">
     <header class="topbar">
@@ -50,6 +51,10 @@
         </div>
         {% endif %}
         <p id="monitor-message" role="status"></p>
+        <h3>İzleme sağlığı</h3>
+        <p>Tüm işletim ve bakım saatleri: Europe/Istanbul (UTC+03:00). Kayıtlar UTC saklanır.</p>
+        <div id="operations-health" class="health-grid" aria-live="polite"></div>
+        <p id="operations-warning" role="status"></p>
         <div id="overview-devices" class="device-list"></div>
       </section>
       <section class="panel alarms-panel" aria-labelledby="alarms-title">
@@ -72,6 +77,52 @@
           <button id="alarms-next" class="button secondary">Sonraki</button>
         </div>
         <div id="alarm-detail" aria-live="polite"></div>
+      </section>
+      <section class="panel operations-panel" aria-labelledby="maintenance-title">
+        <h2 id="maintenance-title">Bakım ve süreli susturma</h2>
+        <p>Ölçümler ve alarm geçmişi kaydedilmeye devam eder. Bakım ve susturma dış bildirimleri
+          bastırır; alarmı çözmez. Görüldü işareti bu durumlardan bağımsızdır.</p>
+        {% if current_user.role == "admin" %}
+        <form id="maintenance-form">
+          <label>Cihaz<select name="device_id" id="maintenance-device" required></select></label>
+          <div class="field-row">
+            <label>Başlangıç · Europe/Istanbul<input name="starts_at" type="datetime-local" step="1" required></label>
+            <label>Bitiş · Europe/Istanbul<input name="ends_at" type="datetime-local" step="1" required></label>
+          </div>
+          <label>Bakım gerekçesi<textarea name="reason" maxlength="500" required rows="2"></textarea></label>
+          <button class="button primary" type="submit">Bakım oluştur</button>
+        </form>
+        {% endif %}
+        <p id="maintenance-message" role="status"></p>
+        <div id="maintenance-list" class="history-list"></div>
+        <div class="actions">
+          <button id="maintenance-prev" class="button secondary">Önceki bakım</button>
+          <button id="maintenance-next" class="button secondary">Sonraki bakım</button>
+        </div>
+        <div id="silence-controls">
+          <h3 id="silence-title">Susturma geçmişi için alarm detayı seçin</h3>
+          {% if current_user.role == "admin" %}
+          <form id="silence-form" class="hidden">
+            <label>Bitiş · Europe/Istanbul<input name="ends_at" type="datetime-local" step="1" required></label>
+            <label>Susturma gerekçesi<textarea name="reason" maxlength="500" required rows="2"></textarea></label>
+            <button class="button primary" type="submit">Süreli sustur</button>
+          </form>
+          {% endif %}
+          <p id="silence-message" role="status"></p>
+          <div id="silence-list" class="history-list"></div>
+        </div>
+      </section>
+      <section class="panel operations-panel" aria-labelledby="notifications-title">
+        <h2 id="notifications-title">Bildirim geçmişi</h2>
+        <p>“SMTP kabul etti” gelen kutusuna teslim edildiği anlamına gelmez.
+          Kapalı ve mock olaylar daha sonra gerçek alıcılara gönderilmez.</p>
+        <label>Alarm ID filtresi (boş: tümü)<input id="notifications-alarm" type="number" min="1"></label>
+        <p id="notifications-status" role="status"></p>
+        <div id="notifications-list" class="history-list"></div>
+        <div class="actions">
+          <button id="notifications-prev" class="button secondary">Önceki bildirim</button>
+          <button id="notifications-next" class="button secondary">Sonraki bildirim</button>
+        </div>
       </section>
       {% if current_user.role == "admin" %}
       <section class="panel add-panel" aria-labelledby="add-title">

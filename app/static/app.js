@@ -44,7 +44,7 @@ async function request(path, options = {}) {
 
 function formatDate(value) {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("tr-TR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("tr-TR", { dateStyle: "short", timeStyle: "medium", timeZone: "Europe/Istanbul" }).format(new Date(value));
 }
 
 function outcomeLabel(outcome) {
@@ -311,6 +311,7 @@ const alarmStatusLabel = (value) => ({open: "Açık", resolved: "Çözüldü", c
 async function loadOverview() {
   const data = await request("/api/summary");
   freshnessSeconds = data.interval_seconds * 2;
+  window.renderOperationsHealth?.(data);
   state.latestChecks = new Map(data.devices.map(item => [item.device_id, item.latest]));
   renderDevices();
   document.querySelector("#overview-status").textContent =
@@ -328,7 +329,7 @@ async function loadOverview() {
     const name = document.createElement("strong");
     name.textContent = item.name;
     const detail = document.createElement("span");
-    detail.textContent = `${item.is_active ? "" : "Pasif · "}${item.fresh ? outcomeLabel(item.status) : "Güncel ölçüm yok"} · Son sonuç: ${item.latest ? outcomeLabel(item.latest.outcome) : "—"} · ${formatDate(item.latest?.checked_at)}${item.latest?.error_message ? " · " + item.latest.error_message : ""}`;
+    detail.textContent = `${item.monitoring_state === "paused" ? "İzleme yönetici tarafından duraklatıldı · " : ""}${item.is_active ? "" : "Pasif · "}${item.fresh ? outcomeLabel(item.status) : "Yeni ölçüm gelmiyor / güncel ölçüm yok"} · Son sonuç: ${item.latest ? outcomeLabel(item.latest.outcome) : "—"} · ${formatDate(item.latest?.checked_at)}${item.latest?.error_message ? " · " + item.latest.error_message : ""}`;
     row.append(name, detail, makeButton("Cihaz detayı / geçmiş", "secondary", () => {
       loadHistory(item.device_id);
       document.querySelector("#detail-panel").scrollIntoView({behavior: "smooth"});
@@ -340,6 +341,7 @@ async function loadOverview() {
 async function showAlarm(id) {
   selectedAlarmId = id;
   const alarm = await request(`/api/alarms/${id}`);
+  window.selectOperationsAlarm?.(alarm);
   const detail = document.querySelector("#alarm-detail");
   detail.replaceChildren();
   const heading = document.createElement("h3");
@@ -371,7 +373,7 @@ async function loadAlarms() {
     const row = document.createElement("div");
     row.className = "history-row";
     const text = document.createElement("span");
-    text.textContent = `#${alarm.id} · ${alarm.target_ip} · ${alarm.probe_mode.toUpperCase()} · ${alarmStatusLabel(alarm.status)} · ${alarm.acknowledged_at ? "Görüldü" : "Görülmedi"} · ${formatDate(alarm.opened_at)}`;
+    text.textContent = `#${alarm.id} · ${alarm.target_ip} · ${alarm.probe_mode.toUpperCase()} · ${alarmStatusLabel(alarm.status)} · ${alarm.acknowledged_at ? "Görüldü" : "Görülmedi"} · ${alarm.in_maintenance ? "Bakımda · " : ""}${alarm.silenced ? "Susturuldu · " : ""}${formatDate(alarm.opened_at)}`;
     row.append(text, makeButton("Alarm detayı", "secondary", () => showAlarm(alarm.id).catch(showPanelError)));
     container.append(row);
   }

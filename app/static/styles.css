@@ -216,3 +216,10 @@ select { padding: .6rem; border: 1px solid #cbd5e1; border-radius: .5rem; backgr
 .report-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .report-table td, .report-table th { text-align: left; padding: .5rem; border-bottom: 1px solid var(--line); }
 #report-status, #report-csv-status { overflow-wrap: anywhere; }
+.operations-panel { grid-column: 1 / -1; min-width: 0; }
+.operations-panel h2, .operations-panel h3 { margin-bottom: 1rem; }
+.health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .75rem; }
+.health-card { display: grid; gap: .5rem; border: 1px solid var(--line); border-radius: 9px; padding: .8rem; }
+.health-card span { color: var(--muted); font-size: .85rem; }
+.operation-row { border-top: 1px solid var(--line); padding: .8rem 0; overflow-wrap: anywhere; }
+#operations-warning { color: var(--warning); }

@@ -71,5 +71,6 @@ def device_csv(device_id: int, request: Request, db: DatabaseSession, filters: F
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
+            "X-Data-Scope": "retained-measurements-only; period-coverage=unknown",
         },
     )

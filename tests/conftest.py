@@ -62,6 +62,7 @@ def app(
     settings = Settings(
         database_url=database_url,
         monitor_mode="mock",
+        notification_mode="off",
         allowed_target_cidrs="127.0.0.1/32,::1/128",
         app_base_url=ORIGIN,
         login_max_attempts=3,

@@ -25,6 +25,7 @@ CSV_COLUMNS = (
     "trigger_source",
     "outcome",
     "latency_ms",
+    "data_scope",
 )
 ISO_TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
@@ -168,6 +169,12 @@ def metrics(db, device_id, filters):
     rows.reverse()
     return {
         "filters": filters.as_dict(),
+        "data_scope": {
+            "basis": "retained_measurements_only",
+            "complete_period": False,
+            "notice": "Rapor yalnızca saklanan ölçümleri kapsar. Eksik veya silinmiş geçmiş "
+                      "başarılı kontrol ya da tam dönem erişilebilirliği sayılmaz.",
+        },
         "summary": summary,
         "graph": {
             "limit": GRAPH_LIMIT,
@@ -226,6 +233,7 @@ def measurements_csv(db, device, filters, max_rows):
                 row.source,
                 row.outcome,
                 str(row.latency_ms).replace(".", ",") if valid_rtt(row.latency_ms) else "",
+                "retained_only_period_coverage_unknown",
             ]
         )
     return buffer.getvalue().encode("utf-8-sig")

@@ -110,7 +110,8 @@ def test_ping_process_timeout_is_cleaned_up(monkeypatch: pytest.MonkeyPatch) -> 
     process = FakeProcess(delay=1)
     install_fake_process(monkeypatch, process)
     result = asyncio.run(PingAdapter("Linux").probe("127.0.0.1", 0.001))
-    assert result.outcome == "no_reply"
+    assert result.outcome == "error"
+    assert "süre sınırında" in result.error_message
     assert process.killed is True
 
 

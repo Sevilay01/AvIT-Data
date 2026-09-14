@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,11 +31,25 @@ class Settings(BaseSettings):
     login_lock_seconds: int = Field(default=300, ge=10, le=3600)
     session_cookie_name: str = "avit_session"
     csrf_cookie_name: str = "avit_csrf"
+    notification_mode: Literal["off", "mock", "smtp"] = "off"
+    notification_concurrency: int = Field(default=2, ge=1, le=10)
+    notification_poll_seconds: float = Field(default=2, ge=0.1, le=60)
+    notification_timeout_seconds: float = Field(default=10, ge=0.1, le=60)
+    notification_max_attempts: int = Field(default=5, ge=1, le=10)
+    notification_retry_seconds: int = Field(default=30, ge=1, le=3600)
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_tls: Literal["starttls", "implicit"] = "starttls"
+    smtp_username: str = Field(default="", repr=False)
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = Field(default="", repr=False)
+    smtp_to: str = Field(default="", repr=False)
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     @field_validator(
@@ -53,6 +68,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_application_origin(self) -> Settings:
+        if self.notification_mode == "smtp":
+            import re
+
+            addresses = [self.smtp_from, *self.smtp_to.split(",")]
+            if (
+                not self.smtp_host.strip()
+                or any(c in self.smtp_host for c in "\r\n/@")
+                or not 2 <= len(addresses) <= 21
+                or any(
+                    not a.isascii()
+                    or any(c in a for c in "\r\n")
+                    or not re.fullmatch(r"[^\s<>@,]+@[^\s<>@,]+", a.strip())
+                    for a in addresses
+                )
+            ):
+                raise ValueError("SMTP sunucusu ve yalın gönderici/alıcı adresleri gerekli")
+            if bool(self.smtp_username) != bool(self.smtp_password.get_secret_value()):
+                raise ValueError("SMTP kullanıcı adı ve parola birlikte tanımlanmalı")
         if self.monitor_mode != "mock" and self.monitor_interval_seconds < 60:
             raise ValueError("ICMP kontrol aralığı en az 60 saniye olmalı")
         if self.mock_demo and self.monitor_mode != "mock":
@@ -84,4 +117,14 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(_env_file=None) if os.environ.get("AVIT_NO_ENV_FILE") == "1" else Settings()
+
+
+class IsolatedSettings(Settings):
+    """Only explicit init arguments and defaults; no environment, dotenv or secret files."""
+
+    @classmethod
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+    ):
+        return (init_settings,)

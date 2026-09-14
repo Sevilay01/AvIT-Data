@@ -1,14 +1,14 @@
 import asyncio
-import logging
 from contextlib import suppress
+from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.models import Device
+from app.models import Device, MonitoringHeartbeat
 from app.services.alarms import reset_streaks
+from app.services.event_logging import log_event
 from app.services.monitoring import CheckInProgressError, TargetNotAllowedError
 
-logger = logging.getLogger(__name__)
 SYSTEM_ACTOR = {"source": "scheduler", "actor_username": "system/scheduler"}
 
 
@@ -23,6 +23,8 @@ class MonitoringScheduler:
         self.task = None
         self.last_scan_at = None
         self.last_error = None
+        self.operation_id = None
+        self.last_scheduler_at = None
         self._control = asyncio.Lock()
         self._sweep = asyncio.Lock()
 
@@ -60,21 +62,34 @@ class MonitoringScheduler:
                 await self.scan_once()
             except Exception:
                 self.last_error = "Tarama tamamlanamadı; sunucu günlüğünü inceleyin."
-                logger.exception("Scheduled sweep failed")
+                log_event("monitor.sweep", self.operation_id, status="error")
             await asyncio.sleep(self.settings.monitor_interval_seconds)
 
     async def scan_once(self):
         if self._sweep.locked():
             return
         async with self._sweep:
+            self.operation_id = str(uuid4())
+            self.last_scheduler_at = self.clock()
             self.last_error = None
             with self.database.session_factory() as db:
+                heartbeat = db.get(MonitoringHeartbeat, 1)
+                if heartbeat is None:
+                    heartbeat = MonitoringHeartbeat(id=1)
+                    db.add(heartbeat)
+                heartbeat.last_scheduler_at = self.last_scheduler_at
                 ids = list(db.scalars(select(Device.id).where(Device.is_active.is_(True))))
+                db.commit()
+            log_event("monitor.sweep", self.operation_id, status="started")
             # Fixed-size batches bound both pending tasks and concurrent probes.
             width = self.settings.max_concurrent_checks
             for offset in range(0, len(ids), width):
                 await asyncio.gather(*(self._check(i) for i in ids[offset : offset + width]))
             self.last_scan_at = self.clock()
+            with self.database.session_factory() as db:
+                db.get(MonitoringHeartbeat, 1).last_scan_completed_at = self.last_scan_at
+                db.commit()
+            log_event("monitor.sweep", self.operation_id, status="completed")
 
     async def _check(self, device_id):
         try:
@@ -92,4 +107,4 @@ class MonitoringScheduler:
             self.last_error = "Bir hedef izin listesi dışında; kontrol atlandı."
         except Exception:
             self.last_error = "Bir cihaz kontrol edilemedi; sunucu günlüğünü inceleyin."
-            logger.exception("Scheduled device check failed: %s", device_id)
+            log_event("monitor.check", self.operation_id, status="error", device_id=device_id)

@@ -4,27 +4,45 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import func, select, text
 
 from app.api.devices import AdminMutation, Authenticated, DatabaseSession
-from app.models import Alarm, Device, MonitoringResult
+from app.api.operations import operational_health
+from app.models import Alarm, AlarmSilence, Device, MaintenanceWindow, MonitoringResult
 from app.schemas import MonitoringResultRead
 from app.services.alarms import audit_alarm
 from app.services.audit import add_audit_log
+from app.services.maintenance import effective_end, suppression_reason
 
 router = APIRouter(prefix="/api", tags=["izleme ve alarmlar"])
 
 
-def alarm_data(alarm):
-    return {column.name: getattr(alarm, column.name) for column in Alarm.__table__.columns}
+def alarm_data(alarm, db=None, now=None):
+    data = {column.name: getattr(alarm, column.name) for column in Alarm.__table__.columns}
+    if db is not None:
+        silences = db.scalars(select(AlarmSilence).where(AlarmSilence.alarm_id == alarm.id))
+        windows = db.scalars(
+            select(MaintenanceWindow).where(MaintenanceWindow.device_id == alarm.device_id)
+        )
+        data["silenced"] = any(s.starts_at <= now < effective_end(s) for s in silences)
+        data["in_maintenance"] = any(w.starts_at <= now < effective_end(w) for w in windows)
+        data["suppression_reason"] = suppression_reason(db, alarm, now)
+    return data
 
 
 @router.get("/monitoring/status")
 def monitoring_status(request: Request, user: Authenticated):
     scheduler = request.app.state.scheduler
+    last_tick = scheduler.last_scheduler_at
     return {
         "running": scheduler.running,
         "probe_mode": request.app.state.settings.monitor_mode,
         "interval_seconds": scheduler.settings.monitor_interval_seconds,
         "last_scan_at": scheduler.last_scan_at,
         "last_error": scheduler.last_error,
+        "scheduler_overdue": bool(
+            scheduler.running
+            and last_tick
+            and (request.app.state.clock() - last_tick).total_seconds()
+            > scheduler.settings.monitor_interval_seconds * 2
+        ),
     }
 
 
@@ -68,7 +86,7 @@ def list_alarms(
         select(Alarm).where(*conditions).order_by(Alarm.id.desc()).limit(limit).offset(offset)
     )
     return {
-        "items": [alarm_data(a) for a in alarms],
+        "items": [alarm_data(a, db, request.app.state.clock()) for a in alarms],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -83,8 +101,8 @@ def get_alarm(db, alarm_id):
 
 
 @router.get("/alarms/{alarm_id}")
-def alarm_detail(alarm_id: int, db: DatabaseSession, user: Authenticated):
-    return alarm_data(get_alarm(db, alarm_id))
+def alarm_detail(alarm_id: int, request: Request, db: DatabaseSession, user: Authenticated):
+    return alarm_data(get_alarm(db, alarm_id), db, request.app.state.clock())
 
 
 @router.post("/alarms/{alarm_id}/acknowledge")
@@ -139,6 +157,13 @@ def summary(request: Request, db: DatabaseSession, user: Authenticated):
                 "is_active": device.is_active,
                 "fresh": fresh,
                 "status": result.outcome if fresh else "stale",
+                "monitoring_state": (
+                    "inactive"
+                    if not device.is_active
+                    else "running"
+                    if request.app.state.scheduler.running
+                    else "paused"
+                ),
                 "latest": MonitoringResultRead.model_validate(result) if result else None,
             }
         )
@@ -152,4 +177,7 @@ def summary(request: Request, db: DatabaseSession, user: Authenticated):
             .where(Alarm.probe_mode == mode, Alarm.status == "open")
         ),
         "devices": items,
+        "overdue_checks": sum(d["is_active"] and not d["fresh"] for d in items),
+        "technical_errors": sum(d["status"] == "error" for d in items),
+        "operations": operational_health(request, db),
     }

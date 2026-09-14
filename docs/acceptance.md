@@ -1,5 +1,9 @@
 # Teslim kabul raporu — 12 Eylül 2026
 
+> **Tarihsel 0.4.0 / `20260912_0003` kanıtıdır.** Aşağıdaki sonuçlar 0.5.0 için
+> yeniden yapılmış sayılmaz. Yeni sonuçlar [0.5.0 kabul raporunda](acceptance-enterprise.md)
+> ayrı tutulur. Doğrulanmış eski ZIP değiştirilmemiştir.
+
 Kapsam: mevcut aşama 4 uygulamasının temiz kurulumu, teslim hatası düzeltmesi,
 doğrulama ve belgeler. Yeni ürün özelliği, migration, commit, push veya yayın yoktur.
 Yerel mock teslimini engelleyen bilinen bir hata kalmadı. Aşağıdaki

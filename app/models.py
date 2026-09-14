@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -226,3 +236,84 @@ class Alarm(Base):
     end_reason: Mapped[str | None] = mapped_column(String(100))
     acknowledged_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     acknowledged_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class MaintenanceWindow(Base):
+    __tablename__ = "maintenance_windows"
+    __table_args__ = (
+        CheckConstraint("ends_at > starts_at", name="ck_maintenance_period"),
+        Index("ix_maintenance_device_period", "device_id", "starts_at", "ends_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"))
+    starts_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    ends_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    reason: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    cancelled_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    activated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    delivery_mode: Mapped[str] = mapped_column(String(10))
+    target_key: Mapped[str] = mapped_column(String(64))
+
+
+class AlarmSilence(Base):
+    __tablename__ = "alarm_silences"
+    __table_args__ = (
+        CheckConstraint("ends_at > starts_at", name="ck_silence_period"),
+        Index("ix_silence_alarm_period", "alarm_id", "starts_at", "ends_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alarm_id: Mapped[int] = mapped_column(ForeignKey("alarms.id"))
+    starts_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    ends_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    reason: Mapped[str] = mapped_column(String(500))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    cancelled_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class NotificationOutbox(Base):
+    __tablename__ = "notification_outbox"
+    __table_args__ = (
+        UniqueConstraint("event_id", "channel", "target_key", name="uq_outbox_event_target"),
+        CheckConstraint("attempts >= 0", name="ck_outbox_attempts"),
+        CheckConstraint("delivery_mode IN ('off','mock','smtp')", name="ck_outbox_mode"),
+        CheckConstraint(
+            "status IN ('disabled','pending','sending','retry','accepted','mock_sent',"
+            "'failed','suppressed','discarded')",
+            name="ck_outbox_status",
+        ),
+        Index("ix_outbox_due", "status", "next_attempt_at"),
+        Index("ix_outbox_alarm_order", "alarm_id", "id"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36))
+    alarm_id: Mapped[int] = mapped_column(ForeignKey("alarms.id"))
+    event_type: Mapped[str] = mapped_column(String(30))
+    channel: Mapped[str] = mapped_column(String(10), default="email")
+    target_key: Mapped[str] = mapped_column(String(64))
+    delivery_mode: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(12))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    next_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    safe_error: Mapped[str | None] = mapped_column(String(240))
+    suppression_reason: Mapped[str | None] = mapped_column(String(240))
+    reconciled_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class MonitoringHeartbeat(Base):
+    __tablename__ = "monitoring_heartbeat"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    process_started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_scheduler_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_scan_completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_check_completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class RecoveryGuard(Base):
+    __tablename__ = "recovery_guard"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    restored_at: Mapped[datetime] = mapped_column(UTCDateTime())

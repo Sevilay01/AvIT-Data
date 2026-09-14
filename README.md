@@ -2,9 +2,9 @@
 
 Depo adı: **AvIT-Data**.
 
-Bu depo, staj projesinin dördüncü çalışan aşamasıdır: cihaz bazlı gecikme grafiği ve CSV ölçüm raporu; cihaz envanteri, manuel ve periyodik kontrol, kalıcı alarm yönetimi ve Türkçe genel durum paneli. Önceki kimlik doğrulama, CSRF, admin/viewer yetkileri ve denetim kayıtları korunur.
+Bu depo **0.6.0** sürümüdür: tam sürüm lock dosyaları, kontrollü veri temizliği, doğrulanan SQLite yedekleme/karantinalı geri yükleme ve ortak yerel/CI teslim kontrolü eklendi. Grafik/CSV, envanter, manuel/periyodik kontrol, kalıcı alarm, Türkçe panel, kimlik doğrulama, CSRF, admin/viewer ve audit korunur.
 
-Teslim tek süreçli, yerel bir uygulamadır. Varsayılan **MOCK** modu gerçek ağ isteği göndermez. Her açılışta otomatik izleme duraklatılmıştır. Windows loopback ICMP doğrulandı; şirket/laboratuvar cihazları bu görev kapsamında sınanmadı. Güncel teslim sonucu [kabul raporundadır](docs/acceptance.md); çalışma mantığı [mimari belgesinde](docs/architecture.md) açıklanır.
+Teslim tek süreçli, tek kurum için yerel uygulamadır. Varsayılan **MOCK** ağa çıkmaz; bildirimler **kapalıdır**. Başlangıçta izleme duraklatılmıştır. Önceki 0.4.0 loopback kanıtı yeni sürümün ağ kabulü sayılmaz. Güncel sonuç [0.6.0 kabul raporunda](docs/acceptance-enterprise.md), eski ZIP kanıtı [0.4.0 raporunda](docs/acceptance.md), sonraki işler [yol haritasında](docs/enterprise-roadmap.md), kullanım [işletim kılavuzunda](docs/operations.md) açıklanır.
 
 ## Özellikler
 
@@ -25,6 +25,10 @@ Teslim tek süreçli, yerel bir uygulamadır. Varsayılan **MOCK** modu gerçek 
 - Kalıcı open/resolved/closed alarmları, görüldü işareti ve mode/target ayrımı
 - Genel Durum ve filtreli, sayfalı Alarmlar ekranı
 - Ayrı ve üzerine yazılmayan mock demo veritabanı
+- Alarm/ölçümle aynı transaction'da outbox, DB deduplikasyonu, sıralı ve sınırlı retry
+- Ağsız mock gönderici; sertifikası doğrulanan STARTTLS/implicit TLS SMTP adaptörü
+- Cihaz bakımı, süreli alarm susturma ve güncel ölçümle bitiş uzlaştırması
+- Zamanlayıcı, veri güncelliği, kuyruk ve gönderim hatalarının panelde görünürlüğü
 
 ## Rol matrisi
 
@@ -35,6 +39,8 @@ Teslim tek süreçli, yerel bir uygulamadır. Varsayılan **MOCK** modu gerçek 
 | Cihaz ekleme/düzenleme/pasife alma | — | — | ✓ |
 | Manuel kontrol, izlemeyi başlat/durdur, alarmı görüldü işaretle | — | — | ✓ |
 | Genel özet, izleme durumu ve alarmları okuma | — | ✓ | ✓ |
+| Bakım/susturma ve bildirim geçmişini okuma | — | ✓ | ✓ |
+| Bakım/susturma oluşturma ve iptal etme (CSRF gerekir) | — | — | ✓ |
 | Audit kayıtlarını okuma | — | — | ✓ |
 | `/docs` ve `/openapi.json` | — | — | ✓ |
 
@@ -42,7 +48,7 @@ Anonim API isteği `401`, rolü yetersiz kullanıcı `403` alır. Viewer ekranı
 
 ## Gerekli programlar
 
-- Windows 10/11 ve PowerShell
+- Windows 10/11 x64 ve PowerShell; Linux x86_64 için CI workflow'u hazır (uzak sonuç bekliyor)
 - 64 bit Python 3.12
 - İlk bağımlılık kurulumu için internet bağlantısı
 
@@ -73,7 +79,7 @@ if (-not (Test-Path .env)) {
 
 ## Migration ve ilk hesaplar
 
-İlk iki migration korunmuştur. Yeni `20260912_0003`, alarm ve izleme durumu tablolarını, kontrol kaynağını ve hedef sürümünü ekler; audit kaynağına `scheduler` seçeneğini ekler. v2 verileri korunur; eski ölçümler yeni alarmlara tekrar oynatılmaz. Uygulamayı kapatıp kullandığınız SQLite dosyasının yedeğini aldıktan sonra yükseltin:
+İlk dört migration korunmuştur. Yeni `20260914_0005` yalnız `recovery_guard` tablosunu ekler; geri yükleme tatbikatı kopyasını kalıcı mock/gönderimsiz karantinada tutar. Normal yükseltmede tablo boştur; canlı davranış değişmez. Eski cihaz, ölçüm, alarm, kullanıcı, oturum ve audit korunur; geçmiş alarmlar bildirimlere tekrar oynatılmaz. Uygulamayı kapatıp kullandığınız SQLite dosyasının yedeğini aldıktan sonra yükseltin:
 
 ```powershell
 .\.venv\Scripts\python.exe -m alembic upgrade head
@@ -120,56 +126,38 @@ bekleyin. Aynı yapılandırma ve tek worker komutuyla yeniden başlatın. Envan
 geçmiş, alarmlar ve görüldü bilgisi korunur; otomatik izleme duraklatılmış açılır.
 Port 8000 doluysa başka boş port seçin ve `APP_BASE_URL` değerini aynı adresle eşleştirin.
 
-Çalışan SQLite dosyasının yalnızca ana `.db` dosyasını kopyalamak koşulsuz güvenli
-değildir; WAL/journal içeriği eksik kalabilir. Aşağıdaki örnek SQLite Backup API'siyle
-tutarlı bir yedek oluşturur. Kaynak yolunu gerçek `DATABASE_URL` dosyanıza göre
-kontrol edin. Komut yeni UUID adlı hedef açar; mevcut yedeğin üzerine yazmaz.
+Canlı SQLite yedeği ve ayrı hedefte geri yükleme artık CLI ile yapılır. Hedef ve
+yanındaki `.manifest.json` önceden varsa işlem reddedilir. Kaynak yolu açıkça
+seçilir; bu komutlar `.env`/`DATABASE_URL` okumaz. Aşağıdaki yollar örnektir.
 
 ```powershell
-@'
-from contextlib import closing
-from pathlib import Path
-import sqlite3
-import uuid
-
-source = Path("network_monitor.db").resolve(strict=True)
-backup = source.with_name("backup-" + uuid.uuid4().hex + ".db")
-with backup.open("xb"):
-    pass
-with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
-    with closing(sqlite3.connect(backup)) as dst:
-        src.backup(dst)
-        assert dst.execute("PRAGMA integrity_check").fetchone() == ("ok",)
-        assert not dst.execute("PRAGMA foreign_key_check").fetchall()
-        print("Şema:", dst.execute("SELECT version_num FROM alembic_version").fetchone()[0])
-print("Yedek:", backup)
-'@ | .\.venv\Scripts\python.exe -
+.\.venv\Scripts\python.exe -m app.cli backup --source .\network_monitor.db `
+  --target .\backup-060.db --timeout 30
+.\.venv\Scripts\python.exe -m app.cli restore-drill --source .\backup-060.db `
+  --target .\restore-060.db --timeout 30
 ```
 
-İşlem hata verirse o hedefi başarılı yedek saymayın; yeni bir dosya adıyla tekrar
-çalıştırın. Yedek kullanıcı/parola hash'i ve oturum kayıtları içerir; teslim ZIP'ine
-eklemeyin, erişimini veritabanı kadar sınırlayın.
+`restore-drill` güncel şemalı ve manifesti doğrulanan yedekten yeni hedef üretir.
+Oturumları iptal eder; `recovery_guard` kayıtlı kopyada ağ kontrolleri mock olur,
+bildirim worker'ı kuyruğu işlemez. İzleme duraklatılmış açılır. Karantinayı kaldıran
+otomatik komut bu pakette yoktur. Eski yedeğin hesap/parola değişikliklerini geri
+alabileceği ve olası tekrar gönderimler [işletim kılavuzunda](docs/operations.md)
+açıklanır. Yedek, manifestiyle birlikte korunmalıdır; gerçek yedekler kaynak ZIP'ine
+ve Git'e girmez.
 
-Geri yükleme denemesinde aynı kodun `source` değerini seçtiğiniz yedek dosyası,
-`backup` değerini `Path("restore-" + uuid.uuid4().hex + ".db").resolve()` yaparak
-**ayrı bir dosya** üretin. Gerçek veritabanını ezmeyin. Şema sürümünü, integrity ve
-foreign key kontrollerini, cihaz/ölçüm/alarm sayılarını karşılaştırın. Ayrı PowerShell
-terminalinde yalnızca bu deneme dosyasını seçin:
+## Kontrollü saklama
 
 ```powershell
-$env:DATABASE_URL = "sqlite:///./restore-BURAYA_OLUSAN_AD.db"
-$env:MONITOR_MODE = "mock"
-$env:APP_BASE_URL = "http://127.0.0.1:8001"
-.\.venv\Scripts\python.exe -m alembic current
-.\.venv\Scripts\python.exe -m alembic check
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
+# Tarihler örnektir; varsayılan dry-run, gerçek silme yok.
+.\.venv\Scripts\python.exe -m app.cli cleanup --database .\demo.db `
+  --measurements-before "2026-06-01T00:00:00Z" --sessions-before "2026-09-01T00:00:00Z"
 ```
 
-8001 boş olmalı; gerçek oluşan dosya adını yazın. Başlangıçta otomatik izleme
-duraklatılmış kalır. Eski oturumların da yedekte bulunabileceğini unutmayın.
-Deneme bitince `Ctrl+C` ve bu terminali kapatma ile normal `.env` ayarlarına dönün.
-Bu görevde geri yükleme yalnızca kabul veritabanında denendi.
-[Python SQLite Backup API belgesi](https://docs.python.org/3.12/library/sqlite3.html#sqlite3.Connection.backup).
+Silme için ayrıca `--apply` gerekir; `--batch-size 500 --max-batches 20` ile
+sınırlıdır. Kesim verilmezse o sınıf korunur. Aktif oturumlar, son ölçümler, açık
+alarm ve bekleyen seri kanıtları, işlenmemiş sonuçlar, bütün outbox ve audit kalır.
+Otomatik temizlik kapalıdır. Süreler kurum politikası olarak dayatılmaz.
+[Tam saklama kuralları ve tekrar çalıştırma](docs/retention.md).
 
 ## Güvenlik yapılandırması
 
@@ -223,20 +211,44 @@ ALLOWED_TARGET_CIDRS=127.0.0.1/32,::1/128
 
 Admin rolü bile `ALLOWED_TARGET_CIDRS` listesini atlayamaz. Hostname çözümleme, ağ tarama ve keşif yapılmaz. “Yanıt alınamadı” cihazın kesin olarak kapalı olduğu anlamına gelmez.
 
-## Test ve kalite kontrolleri
+## Test, paketleme ve temiz teslim doğrulaması
+
+Çalışma ve geliştirme doğrudan girdileri `.in`, tüm transitif sürümleri sabitlenen
+kurulum dosyaları `.txt` biçimindedir. [Destek/güncelleme yöntemi](docs/dependencies.md).
+Rutin yerel kalite girişi:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check .
-
-$env:DATABASE_URL = "sqlite:///./schema-check.db"
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m alembic check
-Remove-Item -LiteralPath .\schema-check.db
-Remove-Item Env:DATABASE_URL
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m scripts.verify local --evidence .\build\kalite-yeni.json
 ```
 
-Testler yalnızca geçici veritabanlarında kullanıcı oluşturur, kontrol edilebilir saat kullanır ve gerçek ping göndermez. Hem sıfır veritabanı kurulumu hem v1 cihaz/kontrol verisi bulunan veritabanının veri kayıpsız yükseltilmesi sınanır.
+Tek script pytest, Ruff, pip/lock check, geçici boş DB migration, Alembic model/şema
+kontrolü ve Node ile üç mevcut JS dosyasını denetler. Testlerde önceki şemalardan
+veri koruyan yükseltmeler bulunur. Her alt hata başarısız çıkış kodu verir.
+
+Son kaynaklardan yeni paket ve o **ZIP üzerinde** iki yeni ortamda doğrulama:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.package --output .\dist\AvITData-0.6.0-yeni.zip
+$Python312 = "C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe"
+& $Python312 -m scripts.verify delivery --archive .\dist\AvITData-0.6.0-yeni.zip `
+  --work-dir .\build\teslim-yeni --python $Python312 --evidence .\build\teslim-yeni.json
+```
+
+Adlar mevcut olmamalıdır. ZIP `release-files.txt` izin listesinden üretilir;
+arşiv içindeki `SOURCE-MANIFEST.json` dosya hash'lerini taşır. Gerçek ayar/veri,
+yedek, log, sanal ortam ve önceki ZIP'ler dahil edilmez. Script ayrı kaynak klasörü,
+yalnız çalışma bağımlılıkları içeren venv ve ayrı geliştirme venv'i oluşturur.
+İlk ortamda gerçek localhost HTTP üzerinden migration/giriş/cihaz/mock alarm,
+bildirim, bakım/susturma, sağlık, rapor/CSV ve geri yüklenen kopya doğrulanır.
+İkinci ortamda ortak kalite paketi çalışır. `.env`, DB/SMTP ve Python/pip ortam
+ayarları devralınmaz; hesap parolası rastgele üretilir ve loglanmaz.
+
+Script yalnız kendi geçici DB/sunucularını temizler. Yeni teslim çalışma klasörü
+ve kanıt dosyaları inceleme için kalır. Node.js sözdizimi doğrulaması tarayıcı
+kontrolü değildir; HTTP CSV kontrolü Excel veya tarayıcıdan indirme kabulü değildir.
+CI Windows/Linux workflow'u aynı giriş noktasını kullanır; uzak çalışma sonucu
+[kabul raporunda](docs/acceptance-enterprise.md) ayrıca belirtilir.
 
 ## API özeti
 
@@ -254,7 +266,7 @@ Testler yalnızca geçici veritabanlarında kullanıcı oluşturur, kontrol edil
 
 ## Sınırlar
 
-Uygulama yalnızca `127.0.0.1` üzerinde çalıştırılmalıdır. SNMP, TCP taraması, e-posta/Telegram bildirimi, PDF, toplu rapor tasarımcısı, otomatik geçmiş silme ve internet dağıtımı bu aşamada yoktur. Çok kullanıcılı/çok süreçli dağıtım öncesinde paylaşılan hız sınırlama deposu, HTTPS sonlandırma ve operasyonel anahtar/yedekleme yönetimi ayrıca tasarlanmalıdır.
+Uygulama yerel kabulde yalnızca `127.0.0.1` üzerinde çalıştırılmalıdır. SNMP, TCP taraması, Telegram, PDF, toplu rapor tasarımcısı, otomatik geçmiş silme ve internet dağıtımı yoktur. SMTP adaptörü eklendi; gerçek sunucu/alıcı kabulü yapılmadı. Çok müşterili/çok süreçli dağıtım üyelik/veri/ağ ayrımı, görev sahipliği, ortak hız sınırı, HTTPS ve yedekleme tasarımı gerektirir.
 
 
 ## Periyodik izleme ve alarm kuralları
@@ -274,7 +286,7 @@ Manuel ve otomatik ölçümler aynı servis, cihaz kilidi, eşzamanlılık sın�
 
 Durdurma ve yeniden başlatma bekleyen serileri sıfırlar; açık alarm ve görüldü bilgisi korunur. IP değişikliği veya pasife alma, eski açık alarmları `closed` ve `target_changed/device_deactivated` gerekçesiyle idari kapatır. Başarılı yanıttaki `resolved` durumundan ayrıdır. Hedef sürümü, kontrol sırasında IP değiştirilip geri alınsa bile eski sonucu yeni duruma uygulamaz. Eski hedefin sonucu geçmişte `is_current=false` olarak kalır. Mock sonuçları ICMP alarmına etki etmez.
 
-Sonuç, sayaç ve alarm/audit geçişi kısa `BEGIN IMMEDIATE` transaction'ında işlenir; ağ boyunca yazma transaction'ı açık tutulmaz. Görevler Session paylaşmaz. Aynı sonucun tekrar değerlendirilmesi etkisizdir; SQLite kısmi benzersiz indeksi bir hedef/mod için ikinci açık alarmı engeller. Geçmiş bu aşamada otomatik silinmez.
+Sonuç, sayaç ve alarm/audit geçişi kısa `BEGIN IMMEDIATE` transaction'ında işlenir; ağ boyunca yazma transaction'ı açık tutulmaz. Görevler Session paylaşmaz. Aynı sonucun tekrar değerlendirilmesi etkisizdir; SQLite kısmi benzersiz indeksi bir hedef/mod için ikinci açık alarmı engeller. Geçmiş otomatik silinmez; 0.6.0 CLI temizliği korunan kanıtlar dışındaki eski sonuçlara açık apply ile uygulanabilir.
 
 Panel 5 saniyede bir yalnızca verileri okur. Yenileme kontrol tetiklemez. Sonucu olmayan, pasif veya son ölçümü iki kontrol aralığından eski cihaz **Güncel ölçüm yok** olarak gösterilir. Genel özet yalnızca seçili çalışma modunu ve güncel hedef sürümünü kullanır. Alarm listesinde mod açıkça seçilir; geçmişteki farklı modlar etiketlenir.
 
@@ -352,11 +364,11 @@ Teslim kabulünde Windows `<1 ms` yanıtlarının kesin RTT olmadığı doğrula
 Windows ping çıktısı OEM kod sayfasıyla çözülür. Geçmişte türetilmiş sayısal kayıtlar
 otomatik değiştirilmez. [Microsoft ping belgesi](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ping).
 
-Chart.js **4.5.1** tarayıcı UMD dağıtımı `app/static/vendor/chartjs-4.5.1/chart.umd.js` içinde yereldir. MIT lisansı `LICENSE.md`, npm tarball kaynağı, SHA-512 paket bütünlüğü ve dosyanın SHA-256 değeri `provenance.json` içinde saklanır. Paket bütünlüğü indirme sırasında doğrulandı. Çalışırken CDN, Node.js, frontend derlemesi veya tarih adaptörü gerekmez. Python bağımlılıkları ve şema değişmedi; bu aşama için yeni migration yoktur. Mevcut son migration `20260912_0003` kalır.
+Chart.js **4.5.1** yerel UMD dağıtımı, MIT lisansı ve provenance dosyası korunur. Çalışırken CDN, Node.js veya frontend derlemesi gerekmez. Grafik aşaması 0.4.0 şemayı değiştirmemişti; 0.5.0 head'i `20260913_0004` olmuştur. Python bağımlılık listesi değişmedi.
 
 Panel/grafik yerel kaynaklıdır; admin `/docs` ekranındaki varsayılan Swagger UI
 ise dış CDN kaynakları kullanır. Dış istekler engellenmiş tarayıcı doğrulaması
-tamamlanmadı. Güncel **126 test** sonucu ve arayüz/Excel/indirme sınırları
+tamamlanmadı. **0.4.0'a ait 126 test** sonucu ve arayüz/Excel/indirme sınırları
 [teslim kabul raporunda](docs/acceptance.md) ayrı ayrı kayıtlıdır.
 
 Geliştirme testleri ve güncelleme için mevcut sanal ortamı kullanın, `.env` dosyasını ezmeyin.
@@ -371,7 +383,34 @@ Set-Location "C:\Users\DELL\AvITData-Network-Monitor"
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Önceki aşamanın şeması henüz uygulanmadıysa, yedek alıp sunucu kapalıyken `python -m alembic upgrade head` çalıştırın. Bu aşamada yeni migration eklenmedi.
+Önceki şema henüz uygulanmadıysa yedek alıp sunucu kapalıyken `python -m alembic upgrade head` çalıştırın. 0.5.0 için yeni `20260913_0004` migration'ı gerekir.
+
+## 0.5.0 bildirim/bakım paketi
+
+`NOTIFICATION_MODE=off|mock|smtp`; varsayılan `off`. Kapalı/mock geçmişi SMTP
+açılınca gerçek alıcılara gönderilmez. SMTP seçilse bile mock ölçümler ağsız kalır.
+SMTP DATA kabulü gelen kutusu teslimi değildir; çökme sonrası kopya mesaj mümkündür.
+Bakım ve susturma alarmı çözmez; bitiş sonrası taze ölçümle tek özet oluşur.
+Panel saatleri Europe/Istanbul, saklama UTC. [İşletim ayrıntıları](docs/operations.md).
+
+Sahte saatli ve tamamen ağsız demo (yeni dosya adı kullanın):
+
+```powershell
+Set-Location "C:\Users\DELL\AvITData-Network-Monitor"
+$DemoName = "enterprise-demo-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".db"
+.\.venv\Scripts\python.exe -m app.enterprise_demo --path $DemoName
+$env:DATABASE_URL = "sqlite:///./" + $DemoName
+$env:MONITOR_MODE = "mock"
+$env:MOCK_DEMO = "false"
+$env:NOTIFICATION_MODE = "mock"
+$env:APP_BASE_URL = "http://127.0.0.1:8000"
+.\.venv\Scripts\python.exe -m app.cli create-user --username admin --role admin
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Demo mevcut dosyaya yazmaz; varsayılan giriş hesabı oluşturmaz. `demo-author` yalnız
+kayıt ilişkilendirmesi için pasif, rastgele parolalıdır. [Demo ve manuel kabul](docs/demo-enterprise.md).
+Eski `dist/AvITData-delivery-20260912-b682eb9d.zip` yalnız 0.4.0 kanıtıdır ve korunur.
 
 Uygulama kararlarının kaynakları: [Chart.js entegrasyonu](https://www.chartjs.org/docs/latest/getting-started/integration.html), [çizgi grafikleri ve spanGaps](https://www.chartjs.org/docs/latest/charts/line.html), [Python csv](https://docs.python.org/3/library/csv.html), [CWE-1236](https://cwe.mitre.org/data/definitions/1236.html).
 

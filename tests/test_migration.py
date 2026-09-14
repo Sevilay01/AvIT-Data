@@ -23,9 +23,14 @@ def test_fresh_database_migrates_to_auth_schema(
         "monitoring_results",
         "user_sessions",
         "users",
+        "notification_outbox",
+        "maintenance_windows",
+        "alarm_silences",
+        "monitoring_heartbeat",
+        "recovery_guard",
     }
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260912_0003"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260914_0005"
     engine.dispose()
 
 
@@ -60,5 +65,5 @@ def test_v1_data_is_preserved_during_upgrade(
         ).one()
         assert device == ("Eski cihaz", "127.0.0.7")
         assert result == (7, "127.0.0.7", "reply")
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260912_0003"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260914_0005"
     engine.dispose()

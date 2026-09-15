@@ -1,0 +1,2 @@
+# Preserve vendored distribution bytes across Windows and Linux checkouts.
+app/static/vendor/chartjs-4.5.1/chart.umd.js -text

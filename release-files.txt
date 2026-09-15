@@ -1,4 +1,5 @@
 .env.example
+.gitattributes
 .github/workflows/verify.yml
 .gitignore
 README.md

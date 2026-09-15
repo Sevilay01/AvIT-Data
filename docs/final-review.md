@@ -38,6 +38,10 @@ SSO veya çok müşterili ürün geliştirmesi zorunlu kabul edilmemiştir.
    GitHub Actions bağlamını ve çalışma bağlantısını kaydedecek şekilde düzeltildi.
 5. **Eksik tarayıcı kabulü:** Gerçek Chromium ile localhost mock uygulaması
    üzerinde programatik tarayıcı kontrolü ve indirilebilir kanıtlar eklendi.
+6. **Windows'ta Chart.js bütünlüğü:** Git checkout satır sonlarını CRLF'e
+   dönüştürdüğü için yerel Chart.js dosyasının kaynak SHA-256 değeri
+   değişiyordu. Vendored dağıtım dosyası byte-düzeyinde korunacak şekilde
+   .gitattributes kuralı ve teslim manifesti eklendi.
 
 Önceki migration'lar, veritabanı şeması ve varsayılan mock/gönderimsiz davranış
 değiştirilmedi. Gerçek kullanıcı DB'sinde işlem yapılmadı.

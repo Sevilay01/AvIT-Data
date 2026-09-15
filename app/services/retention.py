@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, literal, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.database import Database
@@ -21,6 +21,7 @@ from app.models import (
     User,
     UserSession,
 )
+from app.services.timestamps import iso_utc, timestamp_key
 
 
 def result_protections():
@@ -37,7 +38,7 @@ def result_protections():
             Alarm.probe_mode == r.probe_mode,
             Alarm.target_ip == r.target_ip,
             Alarm.status == "open",
-            func.julianday(r.checked_at) >= func.julianday(Alarm.first_no_reply_at),
+            timestamp_key(r.checked_at) >= timestamp_key(Alarm.first_no_reply_at),
         )
         .exists()
     )
@@ -48,7 +49,7 @@ def result_protections():
             MonitorState.probe_mode == r.probe_mode,
             MonitorState.target_version == r.target_version,
             MonitorState.no_reply_count > 0,
-            func.julianday(r.checked_at) >= func.julianday(MonitorState.first_no_reply_at),
+            timestamp_key(r.checked_at) >= timestamp_key(MonitorState.first_no_reply_at),
         )
         .exists()
     )
@@ -66,14 +67,16 @@ def count(db, model, *conditions):
 
 def retention_predicates(*, measurements_before=None, sessions_before=None):
     reasons = result_protections()
-    old = func.julianday(MonitoringResult.checked_at) < func.julianday(measurements_before)
+    measurement_cutoff = literal(iso_utc(measurements_before) if measurements_before else None)
+    session_cutoff = literal(iso_utc(sessions_before) if sessions_before else None)
+    old = timestamp_key(MonitoringResult.checked_at) < measurement_cutoff
     measurements = and_(old, ~or_(*reasons.values()))
     # Do not infer expiry from the current idle-time setting: it can change.
     # Only already revoked or absolutely expired sessions qualify, with grace
     # measured from that end time, never creation/last-activity time.
     ended = or_(
-        func.julianday(UserSession.revoked_at) < func.julianday(sessions_before),
-        func.julianday(UserSession.expires_at) < func.julianday(sessions_before),
+        timestamp_key(UserSession.revoked_at) < session_cutoff,
+        timestamp_key(UserSession.expires_at) < session_cutoff,
     )
     return {MonitoringResult: measurements, UserSession: ended}, reasons, old
 

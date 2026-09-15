@@ -1,4 +1,5 @@
 .env.example
+.gitattributes
 .github/workflows/verify.yml
 .gitignore
 README.md
@@ -40,6 +41,7 @@ app/services/reporting.py
 app/services/retention.py
 app/services/scheduler.py
 app/services/security.py
+app/services/timestamps.py
 app/services/users.py
 app/static/app.js
 app/static/operations.js
@@ -59,15 +61,18 @@ docs/demo-enterprise.md
 docs/demo.md
 docs/dependencies.md
 docs/enterprise-roadmap.md
+docs/final-review.md
 docs/operations.md
 docs/retention.md
 pyproject.toml
 release-files.txt
+requirements-browser.txt
 requirements-dev.in
 requirements-dev.txt
 requirements.in
 requirements.txt
 scripts/__init__.py
+scripts/browser_smoke.py
 scripts/common.py
 scripts/lock_dependencies.py
 scripts/package.py

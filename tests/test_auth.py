@@ -275,3 +275,21 @@ def test_http_cookie_exception_is_local_only_and_https_forces_secure() -> None:
     assert Settings(app_base_url="https://monitor.example", _env_file=None).cookie_secure is True
     with pytest.raises(ValidationError, match="HTTP yalnızca yerel"):
         Settings(app_base_url="http://monitor.example", _env_file=None)
+
+
+@pytest.mark.parametrize("invalid_csrf", [None, "mismatched-csrf-cookie"])
+def test_missing_or_mismatched_csrf_cookie_recovers_without_redirect_loop(
+    admin_client, invalid_csrf
+):
+    admin_client.cookies.delete("avit_csrf")
+    if invalid_csrf is not None:
+        admin_client.cookies.set(
+            "avit_csrf", invalid_csrf, domain="127.0.0.1", path="/"
+        )
+    response = admin_client.get("/", follow_redirects=True)
+    assert response.status_code == 200
+    assert response.url.path == "/login"
+    assert len(response.history) == 1
+    assert admin_client.get("/api/auth/me").status_code == 401
+    assert login_as(admin_client, "admin", ADMIN_PASSWORD).status_code == 303
+    assert admin_client.get("/").status_code == 200

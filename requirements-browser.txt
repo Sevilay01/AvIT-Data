@@ -1,0 +1,4 @@
+# Optional browser acceptance only; never install in the runtime-only environment.
+-r requirements-dev.txt
+playwright==1.62.0
+pyee==13.0.0

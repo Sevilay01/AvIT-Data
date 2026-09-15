@@ -2,6 +2,9 @@
 
 Depo adı: **AvIT-Data**.
 
+GitHub teslim düzeltmeleri, 20 iş günlük staj kapsam değerlendirmesi, Chromium
+kontrolü ve indirilebilir CI kanıtları: [son teslim incelemesi](docs/final-review.md).
+
 Bu depo **0.6.0** sürümüdür: tam sürüm lock dosyaları, kontrollü veri temizliği, doğrulanan SQLite yedekleme/karantinalı geri yükleme ve ortak yerel/CI teslim kontrolü eklendi. Grafik/CSV, envanter, manuel/periyodik kontrol, kalıcı alarm, Türkçe panel, kimlik doğrulama, CSRF, admin/viewer ve audit korunur.
 
 Teslim tek süreçli, tek kurum için yerel uygulamadır. Varsayılan **MOCK** ağa çıkmaz; bildirimler **kapalıdır**. Başlangıçta izleme duraklatılmıştır. Önceki 0.4.0 loopback kanıtı yeni sürümün ağ kabulü sayılmaz. Güncel sonuç [0.6.0 kabul raporunda](docs/acceptance-enterprise.md), eski ZIP kanıtı [0.4.0 raporunda](docs/acceptance.md), sonraki işler [yol haritasında](docs/enterprise-roadmap.md), kullanım [işletim kılavuzunda](docs/operations.md) açıklanır.

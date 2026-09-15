@@ -419,3 +419,53 @@ def test_demo_settings_ignore_environment_and_dotenv(tmp_path, monkeypatch):
     settings = IsolatedSettings()
     assert settings.monitor_mode == "mock" and settings.notification_mode == "off"
     assert not settings.smtp_password.get_secret_value()
+
+
+@pytest.mark.parametrize("offset_us", [0, 1, 1000, 999999])
+def test_retention_preserves_the_exact_microsecond_cutoff(app, clock, offset_us):
+    seed_history(app, clock)
+    cutoff = clock() + timedelta(microseconds=offset_us)
+    with app.state.database.session_factory() as db:
+        for result_id, delta in ((1, -1), (2, 0), (3, 1)):
+            db.get(MonitoringResult, result_id).checked_at = (
+                cutoff + timedelta(microseconds=delta)
+            )
+        db.commit()
+    report = cleanup(
+        db_path(app),
+        measurements_before=cutoff,
+        apply=True,
+        now=clock() + timedelta(seconds=2),
+    )
+    assert report["deleted"]["measurements"] == 5
+    with app.state.database.session_factory() as db:
+        assert db.get(MonitoringResult, 1) is None
+        assert db.get(MonitoringResult, 2) is not None
+        assert db.get(MonitoringResult, 3) is not None
+
+
+def test_session_retention_preserves_exact_expiry_and_revocation_boundaries(app, clock):
+    cutoff = clock() + timedelta(microseconds=1)
+    ids = {}
+    with app.state.database.session_factory() as db:
+        for kind in ("expiry", "revocation"):
+            for delta in (-1, 0, 1):
+                session, _ = create_session(
+                    db, user_id=1, now=clock(), lifetime=timedelta(hours=1)
+                )
+                boundary = cutoff + timedelta(microseconds=delta)
+                if kind == "expiry":
+                    session.expires_at = boundary
+                else:
+                    session.revoked_at = boundary
+                db.flush()
+                ids[kind, delta] = session.id
+        db.commit()
+    report = cleanup(
+        db_path(app), sessions_before=cutoff, apply=True,
+        now=clock() + timedelta(seconds=1),
+    )
+    assert report["deleted"]["sessions"] == 2
+    with app.state.database.session_factory() as db:
+        for (_kind, delta), session_id in ids.items():
+            assert (db.get(UserSession, session_id) is None) == (delta == -1)

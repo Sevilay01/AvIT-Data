@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -14,7 +15,7 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from scripts.common import ROOT, require_python312, run, safe_env, venv_python
+from scripts.common import ROOT, configure_console, require_python312, run, safe_env, venv_python
 
 
 def local(evidence):
@@ -179,12 +180,19 @@ def delivery(archive, work_dir, python, evidence):
         "runtime": json.loads(runtime_evidence.read_text(encoding="utf-8")),
         "quality": json.loads(quality_evidence.read_text(encoding="utf-8")),
         "elapsed_seconds": round(time.monotonic() - started, 3),
-        "remote_ci": "not_run",
+        "remote_ci": "github_actions" if os.environ.get("GITHUB_ACTIONS") == "true" else "not_run",
+        "ci_run_url": (
+            "https://github.com/" + os.environ["GITHUB_REPOSITORY"]
+            + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+            if os.environ.get("GITHUB_ACTIONS") == "true"
+            else None
+        ),
     }
     evidence.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main():
+    configure_console()
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
     quality = commands.add_parser("local")

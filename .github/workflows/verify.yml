@@ -2,8 +2,12 @@ name: Verify source delivery
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+env:
+  PYTHONUTF8: "1"
 
 permissions:
   contents: read
@@ -33,3 +37,33 @@ jobs:
         run: >-
           python -m scripts.verify delivery --archive source.zip
           --work-dir acceptance --evidence acceptance-result.json
+      - name: Install optional Chromium acceptance tools
+        if: matrix.os == 'ubuntu-latest'
+        run: >-
+          acceptance/development-venv/bin/python -m pip install
+          -r acceptance/source/requirements-browser.txt
+      - name: Install Chromium
+        if: matrix.os == 'ubuntu-latest'
+        run: acceptance/development-venv/bin/python -m playwright install --with-deps chromium
+      - name: Exercise real browser against extracted source
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: acceptance/source
+        run: >-
+          ../development-venv/bin/python -m scripts.browser_smoke
+          --output ../../browser-acceptance
+      - name: Preserve source package and acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-${{ matrix.os }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            source.zip
+            source.verification.json
+            acceptance-result.json
+            acceptance/runtime-evidence.json
+            acceptance/quality-evidence.json
+            browser-acceptance/acceptance.json
+            browser-acceptance/graph.png
+            browser-acceptance/viewer-mobile.png

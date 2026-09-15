@@ -103,10 +103,17 @@ def register_auth_routes(application, templates: Jinja2Templates) -> None:
             allow_preauth=True,
             touch=False,
         )
-        if user_session is not None and user_session.user_id is not None:
+        csrf_token = request.cookies.get(settings.csrf_cookie_name)
+        if (
+            user_session is not None
+            and user_session.user_id is not None
+            and csrf_token
+            and token_matches(csrf_token, user_session.csrf_token_hash)
+        ):
             return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
 
-        csrf_token = request.cookies.get(settings.csrf_cookie_name)
+        # A missing/mismatched CSRF cookie must recover to a new login session,
+        # not bounce indefinitely between the dashboard and this route.
         if (
             user_session is None
             or csrf_token is None

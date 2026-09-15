@@ -1,5 +1,9 @@
 # 0.6.0 ikinci kurumsallaşma paketi — 14 Eylül 2026
 
+> Bu belge ilk yerel 0.6.0 paketinin tarihsel kabulünü korur. GitHub'a gönderim
+> sonrasında bulunan hatalar, düzeltmeler, Chromium kabulü ve son commit'in CI
+> kanıtlarına erişim [teslim incelemesinde](final-review.md) açıklanır.
+
 Kapsam: tek kurum, tek süreç, SQLite; ağsız mock ve gerçek localhost HTTP.
 [0.5.0 kabul raporu](acceptance-enterprise-0.5.0.md) 162 test ve o sürümün ZIP/HTTP
 kanıtlarını tarihsel olarak korur; eski sonuçlar bu sürüme aktarılmış doğrulama

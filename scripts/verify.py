@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -179,7 +180,13 @@ def delivery(archive, work_dir, python, evidence):
         "runtime": json.loads(runtime_evidence.read_text(encoding="utf-8")),
         "quality": json.loads(quality_evidence.read_text(encoding="utf-8")),
         "elapsed_seconds": round(time.monotonic() - started, 3),
-        "remote_ci": "not_run",
+        "remote_ci": "github_actions" if os.environ.get("GITHUB_ACTIONS") == "true" else "not_run",
+        "ci_run_url": (
+            "https://github.com/" + os.environ["GITHUB_REPOSITORY"]
+            + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+            if os.environ.get("GITHUB_ACTIONS") == "true"
+            else None
+        ),
     }
     evidence.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 

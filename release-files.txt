@@ -60,6 +60,7 @@ docs/demo-enterprise.md
 docs/demo.md
 docs/dependencies.md
 docs/enterprise-roadmap.md
+docs/final-review.md
 docs/operations.md
 docs/retention.md
 pyproject.toml
